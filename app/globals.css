@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
 
 :root {
   --background: #f7f4ec;
@@ -30,6 +31,99 @@ body {
     radial-gradient(circle at 12% 14%, #dceecf, transparent 35%),
     radial-gradient(circle at 88% 84%, #f6d8a7, transparent 30%),
     linear-gradient(180deg, #f7f4ec 0%, #f1ecde 100%);
+}
+
+.landkoala-shell-focus {
+  padding: 1rem;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 0.85rem;
+}
+
+.landkoala-header {
+  border: 1px solid #d7ceb9;
+  border-radius: 1rem;
+  background: rgba(255, 252, 245, 0.95);
+  padding: 0.65rem 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.landkoala-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.landkoala-logo-mark {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.7rem;
+  background: linear-gradient(135deg, #2f8552, #8fbe76);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.landkoala-logo-dot {
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 999px;
+  background: #f9fff0;
+}
+
+.landkoala-logo-copy {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.landkoala-logo-copy strong {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.landkoala-logo-copy small {
+  color: #5f6f5f;
+  font-size: 0.73rem;
+}
+
+.landkoala-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.landkoala-nav a {
+  color: #38543a;
+  text-decoration: none;
+  font-size: 0.86rem;
+  padding: 0.35rem 0.58rem;
+  border-radius: 0.55rem;
+}
+
+.landkoala-nav a:hover {
+  background: #ecf5e6;
+}
+
+.landkoala-nav-button {
+  border: 1px solid #c8bfaa;
+  background: #fffaf0;
+  border-radius: 0.65rem;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.82rem;
+  color: #2f4632;
+  cursor: pointer;
+}
+
+.landkoala-stage {
+  position: relative;
+  min-height: calc(100vh - 7rem);
+  border: 1px solid #d7ceb9;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: #e8ecdf;
 }
 
 .landkoala-grid {
@@ -213,6 +307,118 @@ body {
   font-size: 0.83rem;
 }
 
+.landkoala-map-wrap {
+  margin-top: 0.75rem;
+  border: 1px solid #d8cfba;
+  border-radius: 0.85rem;
+  overflow: hidden;
+  background: #f8f5ee;
+}
+
+.landkoala-map-focus {
+  margin-top: 0;
+  border: 0;
+  border-radius: 0;
+  height: 100%;
+}
+
+.landkoala-map {
+  height: 320px;
+  width: 100%;
+}
+
+.landkoala-map-focus .landkoala-map {
+  height: 100%;
+  min-height: calc(100vh - 7.5rem);
+}
+
+.leaflet-container {
+  background: #dfe6d5;
+}
+
+.leaflet-container img,
+.leaflet-container .leaflet-tile,
+.leaflet-container .leaflet-marker-icon,
+.leaflet-container .leaflet-marker-shadow {
+  max-width: none !important;
+}
+
+.landkoala-map-empty {
+  margin-top: 0.75rem;
+  border: 1px dashed #c5b89c;
+  border-radius: 0.85rem;
+  padding: 1rem;
+  color: #60705d;
+  background: #fcfaf6;
+}
+
+.landkoala-map-focus .landkoala-map-empty {
+  position: absolute;
+  margin: 0;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 420;
+  max-width: 320px;
+  box-shadow: 0 8px 20px rgba(10, 10, 10, 0.16);
+}
+
+.landkoala-actionbar {
+  position: absolute;
+  top: 0.8rem;
+  left: 0.8rem;
+  bottom: 0.8rem;
+  width: min(420px, calc(100% - 1.6rem));
+  border: 1px solid #d3c9b3;
+  border-radius: 0.95rem;
+  background: rgba(255, 252, 246, 0.97);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  transform: translateX(calc(-100% - 1rem));
+  transition: transform 220ms ease;
+  z-index: 430;
+  box-shadow: 0 12px 30px rgba(22, 31, 23, 0.2);
+}
+
+.landkoala-actionbar.is-open {
+  transform: translateX(0);
+}
+
+.landkoala-actionbar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.7rem 0.8rem;
+  border-bottom: 1px solid #ddd2bc;
+}
+
+.landkoala-actionbar-head button {
+  border: 1px solid #d4cab7;
+  border-radius: 0.58rem;
+  padding: 0.34rem 0.6rem;
+  background: #fff8e9;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.landkoala-actionbar-content {
+  overflow: auto;
+  padding: 0.9rem;
+}
+
+.landkoala-competitor-pin {
+  display: block;
+}
+
+.landkoala-competitor-pin span {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #d94e41;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.28);
+}
+
 .landkoala-competitor-list {
   list-style: none;
   padding: 0;
@@ -249,21 +455,52 @@ body {
 }
 
 @media (max-width: 960px) {
-  .landkoala-grid {
+  .landkoala-metrics {
     grid-template-columns: 1fr;
   }
 
-  .landkoala-metrics {
-    grid-template-columns: 1fr;
+  .landkoala-header {
+    flex-wrap: wrap;
+  }
+
+  .landkoala-nav {
+    order: 3;
+    width: 100%;
   }
 }
 
 @media (max-width: 640px) {
-  .landkoala-shell {
-    padding: 1rem 0.75rem;
+  .landkoala-shell-focus {
+    padding: 0.55rem;
   }
 
   .landkoala-inline-fields {
     grid-template-columns: 1fr;
+  }
+
+  .landkoala-stage {
+    min-height: calc(100vh - 8.8rem);
+  }
+
+  .landkoala-map-focus .landkoala-map {
+    min-height: calc(100vh - 9.2rem);
+  }
+
+  .landkoala-map-focus .landkoala-map-empty {
+    max-width: calc(100% - 2rem);
+  }
+
+  .landkoala-actionbar {
+    top: auto;
+    bottom: 0.5rem;
+    left: 0.5rem;
+    right: 0.5rem;
+    width: auto;
+    max-height: 76%;
+    transform: translateY(calc(100% + 1rem));
+  }
+
+  .landkoala-actionbar.is-open {
+    transform: translateY(0);
   }
 }
