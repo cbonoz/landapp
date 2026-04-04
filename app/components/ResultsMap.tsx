@@ -1,8 +1,8 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Circle,
+  ImageOverlay,
   MapContainer,
   Marker,
   Popup,
@@ -13,7 +13,6 @@ import {
 } from "react-leaflet";
 import type { LatLngBoundsExpression } from "leaflet";
 import L from "leaflet";
-import { haversineDistanceKm } from "@/app/lib/geo";
 import type { AnalyzeResponse } from "@/app/lib/types";
 
 const centerIcon = L.icon({
@@ -54,57 +53,110 @@ function FitToBounds({
   return null;
 }
 
-function getHeatColor(score: number): string {
-  if (score >= 80) return "#18834f";
-  if (score >= 65) return "#4ba25f";
-  if (score >= 50) return "#89b960";
-  if (score >= 35) return "#d5b257";
-  return "#d56a4e";
+type Rgb = { r: number; g: number; b: number };
+
+const HEAT_COLOR_STOPS: Array<{ t: number; color: Rgb }> = [
+  { t: 0, color: { r: 213, g: 106, b: 78 } },
+  { t: 0.35, color: { r: 213, g: 178, b: 87 } },
+  { t: 0.55, color: { r: 137, g: 185, b: 96 } },
+  { t: 0.75, color: { r: 75, g: 162, b: 95 } },
+  { t: 1, color: { r: 24, g: 131, b: 79 } },
+];
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
 }
 
-function getHeatOpacity(score: number): number {
-  return Math.max(0.15, Math.min(0.55, 0.15 + score / 250));
-}
+function getHeatRgb(value: number): Rgb {
+  const clamped = Math.max(0, Math.min(1, value));
 
-function hashToUnit(value: string): number {
-  let hash = 0;
+  for (let i = 0; i < HEAT_COLOR_STOPS.length - 1; i += 1) {
+    const from = HEAT_COLOR_STOPS[i];
+    const to = HEAT_COLOR_STOPS[i + 1];
 
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash << 5) - hash + value.charCodeAt(i);
-    hash |= 0;
+    if (clamped >= from.t && clamped <= to.t) {
+      const localT = (clamped - from.t) / Math.max(to.t - from.t, 1e-6);
+      return {
+        r: Math.round(lerp(from.color.r, to.color.r, localT)),
+        g: Math.round(lerp(from.color.g, to.color.g, localT)),
+        b: Math.round(lerp(from.color.b, to.color.b, localT)),
+      };
+    }
   }
 
-  return (Math.abs(hash) % 1000) / 1000;
+  return HEAT_COLOR_STOPS[HEAT_COLOR_STOPS.length - 1].color;
 }
 
-function getBlobCenter(cell: AnalyzeResponse["opportunityGrid"][number]): [number, number] {
-  const seedA = hashToUnit(`${cell.id}:a`);
-  const seedB = hashToUnit(`${cell.id}:b`);
+function buildSmoothHeatOverlay(result: AnalyzeResponse): string | null {
+  if (typeof window === "undefined") return null;
 
-  const latMeters = 111320;
-  const lonMeters = 111320 * Math.max(Math.cos((cell.center.lat * Math.PI) / 180), 0.1);
-  const driftMeters = 120;
+  const width = 340;
+  const height = 340;
+  const values = new Float32Array(width * height);
 
-  return [
-    cell.center.lat + (((seedA - 0.5) * 2 * driftMeters) / latMeters),
-    cell.center.lon + (((seedB - 0.5) * 2 * driftMeters) / lonMeters),
-  ];
-}
+  const lonSpan = Math.max(result.bbox.east - result.bbox.west, 1e-6);
+  const latSpan = Math.max(result.bbox.north - result.bbox.south, 1e-6);
 
-function getBlobRadiusMeters(cell: AnalyzeResponse["opportunityGrid"][number]): number {
-  const latSpanKm = haversineDistanceKm(
-    { lat: cell.bounds.north, lon: cell.center.lon },
-    { lat: cell.bounds.south, lon: cell.center.lon },
-  );
-  const lonSpanKm = haversineDistanceKm(
-    { lat: cell.center.lat, lon: cell.bounds.east },
-    { lat: cell.center.lat, lon: cell.bounds.west },
-  );
+  let maxValue = 0;
 
-  const baseRadiusMeters = (Math.max(Math.min(latSpanKm, lonSpanKm), 0.15) * 1000) / 2;
-  const scoreScale = 0.9 + cell.score / 130;
+  for (const cell of result.opportunityGrid) {
+    const x = ((cell.center.lon - result.bbox.west) / lonSpan) * (width - 1);
+    const y = ((result.bbox.north - cell.center.lat) / latSpan) * (height - 1);
 
-  return baseRadiusMeters * scoreScale;
+    const cellLonSpan = Math.max(cell.bounds.east - cell.bounds.west, lonSpan / 100);
+    const cellLatSpan = Math.max(cell.bounds.north - cell.bounds.south, latSpan / 100);
+    const radiusPxX = (cellLonSpan / lonSpan) * width;
+    const radiusPxY = (cellLatSpan / latSpan) * height;
+    const sigma = Math.max(6, ((radiusPxX + radiusPxY) / 2) * (0.95 + cell.score / 180));
+    const radius = Math.ceil(sigma * 3);
+    const weight = Math.max(0.05, cell.score / 100);
+    const denom = 2 * sigma * sigma;
+
+    const minX = Math.max(0, Math.floor(x - radius));
+    const maxX = Math.min(width - 1, Math.ceil(x + radius));
+    const minY = Math.max(0, Math.floor(y - radius));
+    const maxY = Math.min(height - 1, Math.ceil(y + radius));
+
+    for (let py = minY; py <= maxY; py += 1) {
+      for (let px = minX; px <= maxX; px += 1) {
+        const dx = px - x;
+        const dy = py - y;
+        const contribution = weight * Math.exp(-(dx * dx + dy * dy) / denom);
+        const index = py * width + px;
+
+        values[index] += contribution;
+        if (values[index] > maxValue) {
+          maxValue = values[index];
+        }
+      }
+    }
+  }
+
+  if (maxValue <= 0) return null;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+
+  const image = context.createImageData(width, height);
+
+  for (let i = 0; i < values.length; i += 1) {
+    const normalized = Math.pow(values[i] / maxValue, 0.72);
+    const alpha = normalized < 0.035 ? 0 : Math.min(0.8, normalized * 0.95);
+    const rgb = getHeatRgb(normalized);
+    const offset = i * 4;
+
+    image.data[offset] = rgb.r;
+    image.data[offset + 1] = rgb.g;
+    image.data[offset + 2] = rgb.b;
+    image.data[offset + 3] = Math.round(alpha * 255);
+  }
+
+  context.putImageData(image, 0, 0);
+  return canvas.toDataURL("image/png");
 }
 
 function FixMapSizing({ trigger }: { trigger: string }) {
@@ -217,6 +269,11 @@ export function ResultsMap({
     ? `${result.query.address}:${result.query.radiusKm}:${result.query.businessPreset}:${result.center.lat}:${result.center.lon}`
     : "";
 
+  const heatOverlayUrl = useMemo(() => {
+    if (!result) return null;
+    return buildSmoothHeatOverlay(result);
+  }, [result]);
+
   return (
     <div className="landkoala-map-wrap landkoala-map-focus">
       <MapContainer
@@ -252,45 +309,15 @@ export function ResultsMap({
 
         {result ? (
           <>
-            {result.opportunityGrid.map((cell) => {
-              const center = getBlobCenter(cell);
-              const radius = getBlobRadiusMeters(cell);
-              const color = getHeatColor(cell.score);
-              const opacity = getHeatOpacity(cell.score);
-
-              return (
-                <Fragment key={cell.id}>
-                  <Circle
-                    center={center}
-                    radius={radius * 1.45}
-                    pathOptions={{
-                      color,
-                      weight: 0,
-                      fillColor: color,
-                      fillOpacity: opacity * 0.28,
-                    }}
-                  />
-                  <Circle
-                    center={center}
-                    radius={radius}
-                    pathOptions={{
-                      color,
-                      weight: 0,
-                      fillColor: color,
-                      fillOpacity: opacity,
-                    }}
-                  >
-                    <Popup>
-                      <strong>Opportunity score: {cell.score}/100</strong>
-                      <br />
-                      Nearest competitor: {cell.metrics.nearestCompetitorKm.toFixed(2)} km
-                      <br />
-                      Local density: {cell.metrics.localCompetitorDensity.toFixed(3)}
-                    </Popup>
-                  </Circle>
-                </Fragment>
-              );
-            })}
+            {heatOverlayUrl && bounds ? (
+              <ImageOverlay
+                url={heatOverlayUrl}
+                bounds={bounds}
+                opacity={0.9}
+                zIndex={340}
+                className="landkoala-heat-overlay"
+              />
+            ) : null}
 
             {result.competition.sample.map((competitor) => (
               <Marker
