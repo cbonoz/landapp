@@ -592,13 +592,68 @@ body {
 }
 
 .landkoala-competitor-list li {
+  display: block;
+  border: 1px solid #ddd5c4;
+  border-radius: 0.65rem;
+  background: #fffdf8;
+}
+
+.landkoala-competitor-item {
+  width: 100%;
   display: flex;
   justify-content: space-between;
   gap: 0.75rem;
-  border: 1px solid #ddd5c4;
-  border-radius: 0.65rem;
   padding: 0.56rem 0.65rem;
   font-size: 0.88rem;
+  border: 0;
+  border-radius: 0.65rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.landkoala-competitor-item:hover {
+  background: #f3f7ef;
+}
+
+.landkoala-competitor-item.is-active {
+  background: #e9f4e6;
+}
+
+.landkoala-competitor-detail {
+  margin-top: 0.6rem;
+  border: 1px solid #d7ceb9;
+  border-radius: 0.7rem;
+  padding: 0.7rem;
+  background: #fffaf1;
+}
+
+.landkoala-competitor-detail h4 {
+  font-size: 0.96rem;
+  font-weight: 620;
+  color: #2d4732;
+}
+
+.landkoala-competitor-detail p {
+  margin-top: 0.4rem;
+  display: flex;
+  gap: 0.6rem;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 1px dashed #e0d5c2;
+  padding-bottom: 0.25rem;
+  font-size: 0.84rem;
+}
+
+.landkoala-competitor-detail p span {
+  color: #556751;
+}
+
+.landkoala-competitor-detail p strong {
+  font-weight: 600;
+  color: #2f4732;
+  text-align: right;
 }
 
 .landkoala-muted {

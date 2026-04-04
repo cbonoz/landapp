@@ -39,8 +39,54 @@ type OverpassElement = {
   };
   tags?: {
     name?: string;
+    amenity?: string;
+    shop?: string;
+    leisure?: string;
+    tourism?: string;
+    office?: string;
+    craft?: string;
+    healthcare?: string;
+    brand?: string;
+    operator?: string;
+    website?: string;
+    contact_website?: string;
+    phone?: string;
+    contact_phone?: string;
+    opening_hours?: string;
+    "addr:housenumber"?: string;
+    "addr:street"?: string;
+    "addr:city"?: string;
+    "addr:state"?: string;
+    "addr:postcode"?: string;
   };
 };
+
+function normalizeCategory(tags: OverpassElement["tags"]): string | null {
+  if (!tags) return null;
+
+  if (tags.amenity) return `amenity:${tags.amenity}`;
+  if (tags.shop) return `shop:${tags.shop}`;
+  if (tags.leisure) return `leisure:${tags.leisure}`;
+  if (tags.tourism) return `tourism:${tags.tourism}`;
+  if (tags.office) return `office:${tags.office}`;
+  if (tags.craft) return `craft:${tags.craft}`;
+  if (tags.healthcare) return `healthcare:${tags.healthcare}`;
+
+  return null;
+}
+
+function normalizeAddress(tags: OverpassElement["tags"]): string | null {
+  if (!tags) return null;
+
+  const line1 = [tags["addr:housenumber"], tags["addr:street"]].filter(Boolean).join(" ");
+  const line2 = [tags["addr:city"], tags["addr:state"], tags["addr:postcode"]]
+    .filter(Boolean)
+    .join(", ");
+
+  if (!line1 && !line2) return null;
+  if (line1 && line2) return `${line1}, ${line2}`;
+  return line1 || line2 || null;
+}
 
 function clamp(value: number, min = 0, max = 1): number {
   return Math.min(Math.max(value, min), max);
@@ -175,6 +221,15 @@ async function fetchCompetitors(center: Coordinates, radiusKm: number, businessP
         lon,
         distanceKm,
         name: element.tags?.name ?? null,
+        metadata: {
+          category: normalizeCategory(element.tags),
+          brand: element.tags?.brand ?? null,
+          operator: element.tags?.operator ?? null,
+          website: element.tags?.website ?? element.tags?.contact_website ?? null,
+          phone: element.tags?.phone ?? element.tags?.contact_phone ?? null,
+          openingHours: element.tags?.opening_hours ?? null,
+          address: normalizeAddress(element.tags),
+        },
       };
     })
     .filter((point): point is CompetitorPoint => point !== null)
@@ -254,14 +309,16 @@ async function fetchDemographics(center: Coordinates): Promise<Demographics> {
 function buildOpportunityGrid(input: {
   bbox: ReturnType<typeof toBoundingBox>;
   competitors: CompetitorPoint[];
+  searchCenter: Coordinates;
   radiusKm: number;
+  coverageKm: number | null;
 }): OpportunityCell[] {
   const gridRows = 14;
   const gridCols = 14;
   const latStep = (input.bbox.north - input.bbox.south) / gridRows;
   const lonStep = (input.bbox.east - input.bbox.west) / gridCols;
   const kernelKm = Math.max(input.radiusKm / 3, 0.5);
-  const competitors = input.competitors.slice(0, 450);
+  const coverageEdgeKm = Math.max(input.radiusKm * 0.12, 0.4);
 
   const cells: OpportunityCell[] = [];
 
@@ -279,7 +336,7 @@ function buildOpportunityGrid(input: {
       let nearestKm = input.radiusKm;
       let localHits = 0;
 
-      for (const competitor of competitors) {
+      for (const competitor of input.competitors) {
         const distanceKm = haversineDistanceKm(center, competitor);
         nearestKm = Math.min(nearestKm, distanceKm);
 
@@ -291,6 +348,14 @@ function buildOpportunityGrid(input: {
       const nearestSignal = clamp(nearestKm / Math.max(input.radiusKm, 0.001));
       const localDensitySignal = clamp(1 - localHits / 8);
       const score = nearestSignal * 0.6 + localDensitySignal * 0.4;
+      const centerDistanceKm = haversineDistanceKm(input.searchCenter, center);
+      const coverageConfidence =
+        input.coverageKm === null
+          ? 0
+          : clamp(
+              (input.coverageKm + coverageEdgeKm - centerDistanceKm) /
+                Math.max(coverageEdgeKm, 0.001),
+            );
 
       cells.push({
         id: `${row}-${col}`,
@@ -300,6 +365,7 @@ function buildOpportunityGrid(input: {
         metrics: {
           nearestCompetitorKm: Number(nearestKm.toFixed(3)),
           localCompetitorDensity: Number((localHits / (Math.PI * kernelKm * kernelKm)).toFixed(4)),
+          coverageConfidence: Number(coverageConfidence.toFixed(3)),
         },
       });
     }
@@ -329,14 +395,27 @@ export async function POST(request: Request) {
     });
 
     const warnings: string[] = [];
+    const coverageKm =
+      competitionResult.competitors.length > 0
+        ? Math.max(...competitionResult.competitors.map((competitor) => competitor.distanceKm))
+        : null;
+
     const opportunityGrid = buildOpportunityGrid({
       bbox: competitionResult.bbox,
       competitors: competitionResult.competitors,
+      searchCenter: center,
       radiusKm: parsed.radiusKm,
+      coverageKm,
     });
 
     if (demographics.population === null) {
       warnings.push("Population data unavailable for this point; score uses fallback values.");
+    }
+
+    if (coverageKm !== null && coverageKm < parsed.radiusKm * 0.92) {
+      warnings.push(
+        `Competition coverage reached ${coverageKm.toFixed(2)} km of ${parsed.radiusKm.toFixed(2)} km. Outer heat areas may be lower confidence.`,
+      );
     }
 
     const response: AnalyzeResponse = {
@@ -351,6 +430,7 @@ export async function POST(request: Request) {
       competition: {
         count: competitionResult.competitors.length,
         nearestKm: competitionResult.competitors[0]?.distanceKm ?? null,
+        coverageKm,
         sample: competitionResult.competitors.slice(0, 15),
       },
       opportunityGrid,

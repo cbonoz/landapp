@@ -100,6 +100,11 @@ function buildSmoothHeatOverlay(result: AnalyzeResponse): string | null {
   let maxValue = 0;
 
   for (const cell of result.opportunityGrid) {
+    const coverageConfidence = cell.metrics.coverageConfidence;
+    if (coverageConfidence <= 0.02) {
+      continue;
+    }
+
     const x = ((cell.center.lon - result.bbox.west) / lonSpan) * (width - 1);
     const y = ((result.bbox.north - cell.center.lat) / latSpan) * (height - 1);
 
@@ -109,7 +114,7 @@ function buildSmoothHeatOverlay(result: AnalyzeResponse): string | null {
     const radiusPxY = (cellLatSpan / latSpan) * height;
     const sigma = Math.max(6, ((radiusPxX + radiusPxY) / 2) * (0.95 + cell.score / 180));
     const radius = Math.ceil(sigma * 3);
-    const weight = Math.max(0.05, cell.score / 100);
+    const weight = Math.max(0.03, cell.score / 100) * (0.2 + 0.8 * coverageConfidence);
     const denom = 2 * sigma * sigma;
 
     const minX = Math.max(0, Math.floor(x - radius));
@@ -187,19 +192,17 @@ function SyncDefaultView({
   center,
   zoom,
   enabled,
-  followCenter,
 }: {
   center: [number, number];
   zoom: number;
   enabled: boolean;
-  followCenter: boolean;
 }) {
   const map = useMap();
 
   useEffect(() => {
-    if (!enabled || !followCenter) return;
+    if (!enabled) return;
     map.flyTo(center, zoom, { animate: true, duration: 0.35 });
-  }, [center, enabled, followCenter, map, zoom]);
+  }, [center, enabled, map, zoom]);
 
   return null;
 }
@@ -223,13 +226,20 @@ function PickCenterOnClick({
 
 export function ResultsMap({
   result,
+  selectedCenter,
   onCenterPick,
 }: {
   result: AnalyzeResponse | null;
+  selectedCenter?: { lat: number; lon: number } | null;
   onCenterPick?: (center: { lat: number; lon: number }) => void;
 }) {
   const [userCenter, setUserCenter] = useState<[number, number] | null>(null);
   const [manualCenter, setManualCenter] = useState<[number, number] | null>(null);
+
+  useEffect(() => {
+    if (!selectedCenter) return;
+    setManualCenter([selectedCenter.lat, selectedCenter.lon]);
+  }, [selectedCenter]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !navigator.geolocation) {
@@ -295,7 +305,6 @@ export function ResultsMap({
           center={[centerLat, centerLon]}
           zoom={11}
           enabled={!result}
-          followCenter={!manualCenter}
         />
         <FixMapSizing
           trigger={`${centerLat}:${centerLon}:${result?.opportunityGrid.length ?? 0}:${result?.query.radiusKm ?? 0}`}

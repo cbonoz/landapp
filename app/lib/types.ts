@@ -29,6 +29,15 @@ export type CompetitorPoint = Coordinates & {
   id: number;
   name: string | null;
   distanceKm: number;
+  metadata: {
+    category: string | null;
+    brand: string | null;
+    operator: string | null;
+    website: string | null;
+    phone: string | null;
+    openingHours: string | null;
+    address: string | null;
+  };
 };
 
 export type Demographics = {
@@ -57,6 +66,7 @@ export type OpportunityCell = {
   metrics: {
     nearestCompetitorKm: number;
     localCompetitorDensity: number;
+    coverageConfidence: number;
   };
 };
 
@@ -72,6 +82,7 @@ export type AnalyzeResponse = {
   competition: {
     count: number;
     nearestKm: number | null;
+    coverageKm: number | null;
     sample: CompetitorPoint[];
   };
   opportunityGrid: OpportunityCell[];

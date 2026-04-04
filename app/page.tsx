@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { AppHeader } from "@/app/components/AppHeader";
 import { BUSINESS_PRESETS } from "@/app/lib/business-presets";
-import type { AnalyzeResponse, BusinessPreset } from "@/app/lib/types";
+import type { AnalyzeResponse, BusinessPreset, CompetitorPoint } from "@/app/lib/types";
 
 const ResultsMap = dynamic(
   () => import("@/app/components/ResultsMap").then((mod) => mod.ResultsMap),
@@ -25,9 +25,32 @@ type AddressSuggestion = {
   lon: number;
 };
 
+type MapCenter = {
+  lat: number;
+  lon: number;
+};
+
 const presetOptions = Object.entries(BUSINESS_PRESETS) as Array<
   [BusinessPreset, (typeof BUSINESS_PRESETS)[BusinessPreset]]
 >;
+
+function getCompetitorKey(competitor: CompetitorPoint): string {
+  return `${competitor.id}:${competitor.lat}:${competitor.lon}`;
+}
+
+function formatCategory(category: string | null | undefined): string {
+  if (!category) return "Unknown";
+
+  const [namespace, value] = category.split(":");
+  if (!value) return category;
+
+  const label = value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+  return `${namespace}: ${label}`;
+}
 
 export default function Home() {
   const [panelOpen, setPanelOpen] = useState(true);
@@ -46,6 +69,8 @@ export default function Home() {
     error: null,
     result: null,
   });
+  const [draftCenter, setDraftCenter] = useState<MapCenter | null>(null);
+  const [selectedCompetitorKey, setSelectedCompetitorKey] = useState<string | null>(null);
   const [mapPickLoading, setMapPickLoading] = useState(false);
   const mapPickRequestRef = useRef(0);
   const insightsRef = useRef<HTMLElement | null>(null);
@@ -55,11 +80,24 @@ export default function Home() {
     [populationWeight, competitionWeight, incomeWeight],
   );
 
+  const selectedCompetitor = useMemo(() => {
+    const sample = analysis.result?.competition.sample ?? [];
+    if (sample.length === 0) return null;
+
+    if (!selectedCompetitorKey) {
+      return sample[0];
+    }
+
+    return sample.find((competitor) => getCompetitorKey(competitor) === selectedCompetitorKey) ?? sample[0];
+  }, [analysis.result, selectedCompetitorKey]);
+
   useEffect(() => {
     if (!analysis.result) return;
 
     setPanelOpen(true);
     setShowResultsView(true);
+    const topCompetitor = analysis.result.competition.sample[0] ?? null;
+    setSelectedCompetitorKey(topCompetitor ? getCompetitorKey(topCompetitor) : null);
 
     const frameId = window.requestAnimationFrame(() => {
       insightsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -134,9 +172,15 @@ export default function Home() {
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         try {
+          const center = {
+            lat: position.coords.latitude,
+            lon: position.coords.longitude,
+          };
+          setDraftCenter(center);
+
           const resolvedAddress = await reverseGeocodeToAddress(
-            position.coords.latitude,
-            position.coords.longitude,
+            center.lat,
+            center.lon,
           );
 
           if (!resolvedAddress) {
@@ -165,12 +209,13 @@ export default function Home() {
     );
   }
 
-  async function onMapCenterPick(center: { lat: number; lon: number }) {
+  async function onMapCenterPick(center: MapCenter) {
     const requestId = mapPickRequestRef.current + 1;
     mapPickRequestRef.current = requestId;
 
     setLocationLookupError(null);
     setMapPickLoading(true);
+    setDraftCenter(center);
 
     // Show immediate feedback while reverse geocoding catches up.
     setAddress(`${center.lat.toFixed(6)}, ${center.lon.toFixed(6)}`);
@@ -247,7 +292,11 @@ export default function Home() {
       <AppHeader panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((value) => !value)} />
 
       <main className="landkoala-stage" id="map-view">
-        <ResultsMap result={analysis.result} onCenterPick={onMapCenterPick} />
+        <ResultsMap
+          result={analysis.result}
+          selectedCenter={draftCenter}
+          onCenterPick={onMapCenterPick}
+        />
 
         <aside className={`landkoala-actionbar ${panelOpen ? "is-open" : ""}`}>
           <div className="landkoala-actionbar-head">
@@ -450,11 +499,60 @@ export default function Home() {
                   </div>
 
                   <h3 className="landkoala-section-subtitle">Closest competitors</h3>
+
+                  {selectedCompetitor ? (
+                    <article className="landkoala-competitor-detail">
+                      <h4>{selectedCompetitor.name ?? "Unnamed place"}</h4>
+                      <p>
+                        <span>Distance:</span>
+                        <strong>{selectedCompetitor.distanceKm.toFixed(2)} km</strong>
+                      </p>
+                      <p>
+                        <span>Category:</span>
+                        <strong>{formatCategory(selectedCompetitor.metadata.category)}</strong>
+                      </p>
+                      <p>
+                        <span>Brand:</span>
+                        <strong>{selectedCompetitor.metadata.brand ?? "N/A"}</strong>
+                      </p>
+                      <p>
+                        <span>Operator:</span>
+                        <strong>{selectedCompetitor.metadata.operator ?? "N/A"}</strong>
+                      </p>
+                      <p>
+                        <span>Address:</span>
+                        <strong>{selectedCompetitor.metadata.address ?? "N/A"}</strong>
+                      </p>
+                      <p>
+                        <span>Phone:</span>
+                        <strong>{selectedCompetitor.metadata.phone ?? "N/A"}</strong>
+                      </p>
+                      <p>
+                        <span>Website:</span>
+                        <strong>{selectedCompetitor.metadata.website ?? "N/A"}</strong>
+                      </p>
+                      <p>
+                        <span>Hours:</span>
+                        <strong>{selectedCompetitor.metadata.openingHours ?? "N/A"}</strong>
+                      </p>
+                    </article>
+                  ) : null}
+
                   <ul className="landkoala-competitor-list">
                     {analysis.result.competition.sample.map((competitor) => (
-                      <li key={`${competitor.id}-${competitor.lat}`}>
-                        <span>{competitor.name ?? "Unnamed place"}</span>
-                        <strong>{competitor.distanceKm.toFixed(2)} km</strong>
+                      <li key={getCompetitorKey(competitor)}>
+                        <button
+                          type="button"
+                          className={`landkoala-competitor-item ${
+                            selectedCompetitorKey === getCompetitorKey(competitor)
+                              ? "is-active"
+                              : ""
+                          }`}
+                          onClick={() => setSelectedCompetitorKey(getCompetitorKey(competitor))}
+                        >
+                          <span>{competitor.name ?? "Unnamed place"}</span>
+                          <strong>{competitor.distanceKm.toFixed(2)} km</strong>
+                        </button>
                       </li>
                     ))}
                   </ul>
