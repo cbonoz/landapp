@@ -117,10 +117,17 @@ body {
   border: 1px solid #c8bfaa;
   background: #fffaf0;
   border-radius: 0.65rem;
+  min-width: 8.5rem;
   padding: 0.45rem 0.7rem;
   font-size: 0.82rem;
   color: #2f4632;
+  text-align: center;
   cursor: pointer;
+}
+
+.landkoala-nav-button.is-placeholder {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .landkoala-stage {
@@ -190,6 +197,39 @@ body {
   background: #fdfaf3;
   padding: 0.62rem 0.72rem;
   color: #243225;
+}
+
+.landkoala-address-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+}
+
+.landkoala-location-button {
+  border: 1px solid #bdd2c0;
+  border-radius: 0.7rem;
+  padding: 0.55rem 0.72rem;
+  background: #edf8ef;
+  color: #2f5c3a;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.landkoala-location-button:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.landkoala-inline-error {
+  margin-top: -0.2rem;
+  border: 1px solid #e1c3c3;
+  background: #fff4f4;
+  color: #8a2e2e;
+  border-radius: 0.6rem;
+  padding: 0.55rem 0.6rem;
+  font-size: 0.82rem;
 }
 
 .landkoala-inline-fields {
@@ -365,6 +405,7 @@ body {
   bottom: 1rem;
   z-index: 420;
   max-width: 320px;
+  pointer-events: none;
   box-shadow: 0 8px 20px rgba(10, 10, 10, 0.16);
 }
 
@@ -392,9 +433,22 @@ body {
 .landkoala-actionbar-head {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   padding: 0.7rem 0.8rem;
   border-bottom: 1px solid #ddd2bc;
+  gap: 0.8rem;
+}
+
+.landkoala-actionbar-brand {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.landkoala-actionbar-tagline {
+  font-size: 0.9rem;
+  line-height: 1.25;
+  font-weight: 600;
+  color: #304731;
 }
 
 .landkoala-actionbar-head button {
@@ -408,7 +462,19 @@ body {
 
 .landkoala-actionbar-content {
   overflow: auto;
-  padding: 0.9rem;
+  padding: 0.8rem 0.9rem 0.9rem;
+}
+
+.landkoala-results-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.landkoala-results-head .landkoala-title {
+  margin-top: 0;
+  font-size: 1.6rem;
 }
 
 .landkoala-static-page {
@@ -424,7 +490,61 @@ body {
   padding: 1.25rem;
 }
 
+.landkoala-static-section {
+  margin-top: 1rem;
+  border-top: 1px solid #e2d8c2;
+  padding-top: 0.85rem;
+}
+
+.landkoala-static-section h2 {
+  font-size: 1rem;
+  color: #334935;
+  font-weight: 620;
+}
+
+.landkoala-static-grid {
+  margin-top: 0.7rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.landkoala-static-metric {
+  border: 1px solid #dbd0ba;
+  border-radius: 0.75rem;
+  background: #fffaf1;
+  padding: 0.75rem;
+}
+
+.landkoala-static-metric h3 {
+  font-size: 0.9rem;
+  color: #2f4732;
+  font-weight: 620;
+}
+
+.landkoala-static-metric p {
+  margin-top: 0.35rem;
+  font-size: 0.86rem;
+  color: #4d5f4c;
+  line-height: 1.45;
+}
+
+.landkoala-static-metric small {
+  margin-top: 0.45rem;
+  display: block;
+  font-size: 0.77rem;
+  color: #667862;
+}
+
 .landkoala-static-card ul {
+  margin-top: 0.8rem;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.45rem;
+  color: #445644;
+}
+
+.landkoala-static-card ol {
   margin-top: 0.8rem;
   padding-left: 1.1rem;
   display: grid;
@@ -509,9 +629,17 @@ body {
     order: 3;
     width: 100%;
   }
+
+  .landkoala-static-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
+  .landkoala-address-row {
+    grid-template-columns: 1fr;
+  }
+
   .landkoala-shell-focus {
     padding: 0.55rem;
   }

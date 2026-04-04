@@ -11,6 +11,7 @@ type AppHeaderProps = {
 
 export function AppHeader({ panelOpen, onTogglePanel }: AppHeaderProps) {
   const pathname = usePathname();
+  const canTogglePanel = Boolean(onTogglePanel);
 
   return (
     <header className="landkoala-header">
@@ -32,11 +33,16 @@ export function AppHeader({ panelOpen, onTogglePanel }: AppHeaderProps) {
           Data Sources
         </Link>
       </nav>
-      {onTogglePanel ? (
-        <button type="button" className="landkoala-nav-button" onClick={onTogglePanel}>
-          {panelOpen ? "Hide controls" : "Show controls"}
-        </button>
-      ) : null}
+      <button
+        type="button"
+        className={`landkoala-nav-button ${canTogglePanel ? "" : "is-placeholder"}`.trim()}
+        onClick={onTogglePanel}
+        disabled={!canTogglePanel}
+        aria-hidden={!canTogglePanel}
+        tabIndex={canTogglePanel ? 0 : -1}
+      >
+        {panelOpen ? "Hide controls" : "Show controls"}
+      </button>
     </header>
   );
 }

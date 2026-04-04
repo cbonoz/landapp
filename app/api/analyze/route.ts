@@ -76,6 +76,19 @@ function parseAnalyzeRequest(payload: unknown): AnalyzeRequest {
 }
 
 async function geocodeAddress(address: string): Promise<Coordinates> {
+  const coordinatesMatch = address.match(
+    /^\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/,
+  );
+
+  if (coordinatesMatch) {
+    const lat = Number(coordinatesMatch[1]);
+    const lon = Number(coordinatesMatch[2]);
+
+    if (Number.isFinite(lat) && Number.isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+      return { lat, lon };
+    }
+  }
+
   const url = new URL("https://nominatim.openstreetmap.org/search");
   url.searchParams.set("q", address);
   url.searchParams.set("countrycodes", "us");

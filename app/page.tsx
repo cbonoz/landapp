@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { AppHeader } from "@/app/components/AppHeader";
 import { BUSINESS_PRESETS } from "@/app/lib/business-presets";
@@ -19,13 +19,23 @@ type AnalysisState = {
   result: AnalyzeResponse | null;
 };
 
+type AddressSuggestion = {
+  label: string;
+  lat: number;
+  lon: number;
+};
+
 const presetOptions = Object.entries(BUSINESS_PRESETS) as Array<
   [BusinessPreset, (typeof BUSINESS_PRESETS)[BusinessPreset]]
 >;
 
 export default function Home() {
   const [panelOpen, setPanelOpen] = useState(true);
+  const [showResultsView, setShowResultsView] = useState(false);
   const [address, setAddress] = useState("Boston, MA");
+  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
+  const [locationLookupLoading, setLocationLookupLoading] = useState(false);
+  const [locationLookupError, setLocationLookupError] = useState<string | null>(null);
   const [radiusKm, setRadiusKm] = useState(3);
   const [businessPreset, setBusinessPreset] = useState<BusinessPreset>("coffee");
   const [populationWeight, setPopulationWeight] = useState(50);
@@ -36,11 +46,161 @@ export default function Home() {
     error: null,
     result: null,
   });
+  const [mapPickLoading, setMapPickLoading] = useState(false);
+  const mapPickRequestRef = useRef(0);
+  const insightsRef = useRef<HTMLElement | null>(null);
 
   const weightTotal = useMemo(
     () => populationWeight + competitionWeight + incomeWeight,
     [populationWeight, competitionWeight, incomeWeight],
   );
+
+  useEffect(() => {
+    if (!analysis.result) return;
+
+    setPanelOpen(true);
+    setShowResultsView(true);
+
+    const frameId = window.requestAnimationFrame(() => {
+      insightsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [analysis.result]);
+
+  async function reverseGeocodeToAddress(lat: number, lon: number): Promise<string | null> {
+    const params = new URLSearchParams({
+      lat: String(lat),
+      lon: String(lon),
+    });
+
+    const response = await fetch(`/api/location?${params.toString()}`);
+    const payload = (await response.json()) as { address?: string | null; error?: string };
+
+    if (!response.ok || payload.error || !payload.address) {
+      return null;
+    }
+
+    return payload.address;
+  }
+
+  useEffect(() => {
+    const query = address.trim();
+
+    if (query.length < 3) {
+      setAddressSuggestions([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timerId = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/location?q=${encodeURIComponent(query)}`, {
+          signal: controller.signal,
+        });
+        const payload = (await response.json()) as {
+          suggestions?: AddressSuggestion[];
+          error?: string;
+        };
+
+        if (!response.ok || payload.error) {
+          setAddressSuggestions([]);
+          return;
+        }
+
+        setAddressSuggestions(payload.suggestions ?? []);
+      } catch {
+        setAddressSuggestions([]);
+      }
+    }, 320);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timerId);
+    };
+  }, [address]);
+
+  async function onUseMyLocation() {
+    if (typeof window === "undefined" || !navigator.geolocation) {
+      setLocationLookupError("Geolocation is not available in this browser.");
+      return;
+    }
+
+    setLocationLookupLoading(true);
+    setLocationLookupError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const resolvedAddress = await reverseGeocodeToAddress(
+            position.coords.latitude,
+            position.coords.longitude,
+          );
+
+          if (!resolvedAddress) {
+            setLocationLookupError("Could not resolve your location to an address.");
+            setLocationLookupLoading(false);
+            return;
+          }
+
+          setAddress(resolvedAddress);
+          setAddressSuggestions([]);
+          setLocationLookupLoading(false);
+        } catch {
+          setLocationLookupError("Location lookup failed. Please try again.");
+          setLocationLookupLoading(false);
+        }
+      },
+      () => {
+        setLocationLookupError("Location permission denied. You can still type an address.");
+        setLocationLookupLoading(false);
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 8000,
+        maximumAge: 300000,
+      },
+    );
+  }
+
+  async function onMapCenterPick(center: { lat: number; lon: number }) {
+    const requestId = mapPickRequestRef.current + 1;
+    mapPickRequestRef.current = requestId;
+
+    setLocationLookupError(null);
+    setMapPickLoading(true);
+
+    // Show immediate feedback while reverse geocoding catches up.
+    setAddress(`${center.lat.toFixed(6)}, ${center.lon.toFixed(6)}`);
+    setAddressSuggestions([]);
+
+    try {
+      const resolvedAddress = await reverseGeocodeToAddress(center.lat, center.lon);
+
+      if (mapPickRequestRef.current !== requestId) {
+        return;
+      }
+
+      if (resolvedAddress) {
+        setAddress(resolvedAddress);
+        setAddressSuggestions([]);
+        setMapPickLoading(false);
+        return;
+      }
+
+      setLocationLookupError("Pin dropped. Reverse geocoding was unavailable, using coordinates.");
+      setMapPickLoading(false);
+    } catch {
+      if (mapPickRequestRef.current !== requestId) {
+        return;
+      }
+
+      setLocationLookupError("Pin dropped. Reverse geocoding failed, using coordinates.");
+      setMapPickLoading(false);
+    }
+  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -87,106 +247,154 @@ export default function Home() {
       <AppHeader panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((value) => !value)} />
 
       <main className="landkoala-stage" id="map-view">
-        <ResultsMap result={analysis.result} />
+        <ResultsMap result={analysis.result} onCenterPick={onMapCenterPick} />
 
         <aside className={`landkoala-actionbar ${panelOpen ? "is-open" : ""}`}>
           <div className="landkoala-actionbar-head">
-            <p className="landkoala-kicker">LandKoala</p>
+            <div className="landkoala-actionbar-brand">
+              <p className="landkoala-kicker">LandKoala</p>
+              <p className="landkoala-actionbar-tagline">
+                Find underserved store locations in minutes
+              </p>
+            </div>
             <button type="button" onClick={() => setPanelOpen((value) => !value)}>
               {panelOpen ? "Collapse" : "Expand"}
             </button>
           </div>
 
           <div className="landkoala-actionbar-content">
-            <h1 className="landkoala-title">Find underserved store locations in minutes</h1>
-            <p className="landkoala-subtitle">
-              Enter a US address, select a business preset, and score a radius based on
-              population, local competition, and tract-level income.
-            </p>
+            {!showResultsView ? (
+              <>
+                <p className="landkoala-subtitle">
+                  Enter a US address, select a business preset, and score a radius based on
+                  population, local competition, and tract-level income.
+                </p>
 
-            <form className="landkoala-form" onSubmit={onSubmit}>
-              <label>
-                Search address
-                <input
-                  required
-                  value={address}
-                  onChange={(event) => setAddress(event.target.value)}
-                  placeholder="Cambridge, MA"
-                />
-              </label>
+                <form className="landkoala-form" onSubmit={onSubmit}>
+                  <label>
+                    Search address
+                    <div className="landkoala-address-row">
+                      <input
+                        required
+                        value={address}
+                        onChange={(event) => setAddress(event.target.value)}
+                        placeholder="Cambridge, MA"
+                        list="landkoala-address-suggestions"
+                      />
+                      <button
+                        type="button"
+                        className="landkoala-location-button"
+                        onClick={onUseMyLocation}
+                        disabled={locationLookupLoading}
+                      >
+                        {locationLookupLoading ? "Locating..." : "Use my location"}
+                      </button>
+                    </div>
+                    <datalist id="landkoala-address-suggestions">
+                      {addressSuggestions.map((suggestion) => (
+                        <option key={`${suggestion.lat}:${suggestion.lon}:${suggestion.label}`} value={suggestion.label} />
+                      ))}
+                    </datalist>
+                  </label>
 
-              <div className="landkoala-inline-fields">
-                <label>
-                  Radius (km)
-                  <input
-                    type="number"
-                    min={0.5}
-                    max={25}
-                    step={0.5}
-                    value={radiusKm}
-                    onChange={(event) => setRadiusKm(Number(event.target.value))}
-                  />
-                </label>
+                  {mapPickLoading ? (
+                    <p className="landkoala-hint">Updating address from dropped pin...</p>
+                  ) : null}
 
-                <label>
-                  Business type
-                  <select
-                    value={businessPreset}
-                    onChange={(event) => setBusinessPreset(event.target.value as BusinessPreset)}
-                  >
-                    {presetOptions.map(([key, option]) => (
-                      <option key={key} value={key}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  {locationLookupError ? (
+                    <p className="landkoala-inline-error">{locationLookupError}</p>
+                  ) : null}
+
+                  <div className="landkoala-inline-fields">
+                    <label>
+                      Radius (km)
+                      <input
+                        type="number"
+                        min={0.5}
+                        max={25}
+                        step={0.5}
+                        value={radiusKm}
+                        onChange={(event) => setRadiusKm(Number(event.target.value))}
+                      />
+                    </label>
+
+                    <label>
+                      Business type
+                      <select
+                        value={businessPreset}
+                        onChange={(event) =>
+                          setBusinessPreset(event.target.value as BusinessPreset)
+                        }
+                      >
+                        {presetOptions.map(([key, option]) => (
+                          <option key={key} value={key}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="landkoala-weight-grid">
+                    <label>
+                      Population weight
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={populationWeight}
+                        onChange={(event) => setPopulationWeight(Number(event.target.value))}
+                      />
+                    </label>
+                    <label>
+                      Competition weight
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={competitionWeight}
+                        onChange={(event) => setCompetitionWeight(Number(event.target.value))}
+                      />
+                    </label>
+                    <label>
+                      Income weight
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={incomeWeight}
+                        onChange={(event) => setIncomeWeight(Number(event.target.value))}
+                      />
+                    </label>
+                  </div>
+
+                  <p className="landkoala-hint">Current weight total: {weightTotal}</p>
+
+                  <button type="submit" disabled={analysis.loading}>
+                    {analysis.loading ? "Scoring area..." : "Analyze market"}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <div className="landkoala-results-head">
+                <h1 className="landkoala-title">Analysis results</h1>
+                <button
+                  type="button"
+                  className="landkoala-nav-button"
+                  onClick={() => {
+                    setShowResultsView(false);
+                    setAnalysis((current) => ({ ...current, result: null, error: null }));
+                  }}
+                >
+                  Back to search
+                </button>
               </div>
-
-              <div className="landkoala-weight-grid">
-                <label>
-                  Population weight
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={populationWeight}
-                    onChange={(event) => setPopulationWeight(Number(event.target.value))}
-                  />
-                </label>
-                <label>
-                  Competition weight
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={competitionWeight}
-                    onChange={(event) => setCompetitionWeight(Number(event.target.value))}
-                  />
-                </label>
-                <label>
-                  Income weight
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={incomeWeight}
-                    onChange={(event) => setIncomeWeight(Number(event.target.value))}
-                  />
-                </label>
-              </div>
-
-              <p className="landkoala-hint">Current weight total: {weightTotal}</p>
-
-              <button type="submit" disabled={analysis.loading}>
-                {analysis.loading ? "Scoring area..." : "Analyze market"}
-              </button>
-            </form>
+            )}
 
             {analysis.error ? <p className="landkoala-error">{analysis.error}</p> : null}
 
-            <section id="insights">
-              {!analysis.result && !analysis.loading ? (
+            <section id="insights" ref={insightsRef}>
+              {!analysis.result && !analysis.loading && !showResultsView ? (
                 <p className="landkoala-muted">
                   Run an analysis to view score and competitor sample.
                 </p>
@@ -254,14 +462,6 @@ export default function Home() {
               ) : null}
             </section>
 
-            <section id="data-sources" className="landkoala-datasources">
-              <h3 className="landkoala-section-subtitle">Data sources</h3>
-              <ul>
-                <li>OpenStreetMap Nominatim for geocoding</li>
-                <li>OpenStreetMap Overpass for competitor points of interest</li>
-                <li>US Census ACS for population and income context</li>
-              </ul>
-            </section>
           </div>
         </aside>
       </main>
