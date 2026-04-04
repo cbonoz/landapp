@@ -49,6 +49,17 @@ export type ScoreBreakdown = {
   weights: ScoreWeights;
 };
 
+export type OpportunityCell = {
+  id: string;
+  center: Coordinates;
+  bounds: BoundingBox;
+  score: number;
+  metrics: {
+    nearestCompetitorKm: number;
+    localCompetitorDensity: number;
+  };
+};
+
 export type AnalyzeResponse = {
   query: {
     address: string;
@@ -63,6 +74,7 @@ export type AnalyzeResponse = {
     nearestKm: number | null;
     sample: CompetitorPoint[];
   };
+  opportunityGrid: OpportunityCell[];
   score: ScoreBreakdown;
   warnings: string[];
 };

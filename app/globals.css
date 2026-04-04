@@ -95,15 +95,21 @@ body {
   gap: 0.7rem;
 }
 
+.landkoala-nav button,
 .landkoala-nav a {
   color: #38543a;
+  border: 0;
+  background: transparent;
   text-decoration: none;
   font-size: 0.86rem;
   padding: 0.35rem 0.58rem;
   border-radius: 0.55rem;
+  cursor: pointer;
 }
 
-.landkoala-nav a:hover {
+.landkoala-nav button:hover,
+.landkoala-nav a:hover,
+.landkoala-nav .is-active {
   background: #ecf5e6;
 }
 
@@ -403,6 +409,42 @@ body {
 .landkoala-actionbar-content {
   overflow: auto;
   padding: 0.9rem;
+}
+
+.landkoala-static-page {
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.landkoala-static-card {
+  border: 1px solid #d7ceb9;
+  border-radius: 1rem;
+  background: #fffdf7;
+  padding: 1.25rem;
+}
+
+.landkoala-static-card ul {
+  margin-top: 0.8rem;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.45rem;
+  color: #445644;
+}
+
+.landkoala-datasources {
+  margin-top: 1rem;
+  border-top: 1px solid #ddd3bd;
+  padding-top: 0.75rem;
+}
+
+.landkoala-datasources ul {
+  margin-top: 0.45rem;
+  display: grid;
+  gap: 0.35rem;
+  color: #4e5f4c;
+  font-size: 0.86rem;
+  padding-left: 1rem;
 }
 
 .landkoala-competitor-pin {

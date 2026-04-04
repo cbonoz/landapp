@@ -8,6 +8,7 @@ import type {
   CompetitorPoint,
   Coordinates,
   Demographics,
+  OpportunityCell,
 } from "@/app/lib/types";
 
 type NominatimResult = {
@@ -40,6 +41,10 @@ type OverpassElement = {
     name?: string;
   };
 };
+
+function clamp(value: number, min = 0, max = 1): number {
+  return Math.min(Math.max(value, min), max);
+}
 
 function parseAnalyzeRequest(payload: unknown): AnalyzeRequest {
   if (!payload || typeof payload !== "object") {
@@ -233,6 +238,63 @@ async function fetchDemographics(center: Coordinates): Promise<Demographics> {
   };
 }
 
+function buildOpportunityGrid(input: {
+  bbox: ReturnType<typeof toBoundingBox>;
+  competitors: CompetitorPoint[];
+  radiusKm: number;
+}): OpportunityCell[] {
+  const gridRows = 14;
+  const gridCols = 14;
+  const latStep = (input.bbox.north - input.bbox.south) / gridRows;
+  const lonStep = (input.bbox.east - input.bbox.west) / gridCols;
+  const kernelKm = Math.max(input.radiusKm / 3, 0.5);
+  const competitors = input.competitors.slice(0, 450);
+
+  const cells: OpportunityCell[] = [];
+
+  for (let row = 0; row < gridRows; row += 1) {
+    for (let col = 0; col < gridCols; col += 1) {
+      const south = input.bbox.south + row * latStep;
+      const north = south + latStep;
+      const west = input.bbox.west + col * lonStep;
+      const east = west + lonStep;
+      const center = {
+        lat: (south + north) / 2,
+        lon: (west + east) / 2,
+      };
+
+      let nearestKm = input.radiusKm;
+      let localHits = 0;
+
+      for (const competitor of competitors) {
+        const distanceKm = haversineDistanceKm(center, competitor);
+        nearestKm = Math.min(nearestKm, distanceKm);
+
+        if (distanceKm <= kernelKm) {
+          localHits += 1;
+        }
+      }
+
+      const nearestSignal = clamp(nearestKm / Math.max(input.radiusKm, 0.001));
+      const localDensitySignal = clamp(1 - localHits / 8);
+      const score = nearestSignal * 0.6 + localDensitySignal * 0.4;
+
+      cells.push({
+        id: `${row}-${col}`,
+        center,
+        bounds: { north, south, east, west },
+        score: Number((score * 100).toFixed(1)),
+        metrics: {
+          nearestCompetitorKm: Number(nearestKm.toFixed(3)),
+          localCompetitorDensity: Number((localHits / (Math.PI * kernelKm * kernelKm)).toFixed(4)),
+        },
+      });
+    }
+  }
+
+  return cells;
+}
+
 export async function POST(request: Request) {
   try {
     const payload = await request.json();
@@ -254,6 +316,11 @@ export async function POST(request: Request) {
     });
 
     const warnings: string[] = [];
+    const opportunityGrid = buildOpportunityGrid({
+      bbox: competitionResult.bbox,
+      competitors: competitionResult.competitors,
+      radiusKm: parsed.radiusKm,
+    });
 
     if (demographics.population === null) {
       warnings.push("Population data unavailable for this point; score uses fallback values.");
@@ -273,6 +340,7 @@ export async function POST(request: Request) {
         nearestKm: competitionResult.competitors[0]?.distanceKm ?? null,
         sample: competitionResult.competitors.slice(0, 15),
       },
+      opportunityGrid,
       score,
       warnings,
     };

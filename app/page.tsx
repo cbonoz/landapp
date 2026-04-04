@@ -86,7 +86,7 @@ export default function Home() {
     <div className="landkoala-shell landkoala-shell-focus">
       <AppHeader panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((value) => !value)} />
 
-      <main className="landkoala-stage">
+      <main className="landkoala-stage" id="map-view">
         <ResultsMap result={analysis.result} />
 
         <aside className={`landkoala-actionbar ${panelOpen ? "is-open" : ""}`}>
@@ -185,70 +185,83 @@ export default function Home() {
 
             {analysis.error ? <p className="landkoala-error">{analysis.error}</p> : null}
 
-            {!analysis.result && !analysis.loading ? (
-              <p className="landkoala-muted">Run an analysis to view score and competitor sample.</p>
-            ) : null}
+            <section id="insights">
+              {!analysis.result && !analysis.loading ? (
+                <p className="landkoala-muted">
+                  Run an analysis to view score and competitor sample.
+                </p>
+              ) : null}
 
-            {analysis.result ? (
-              <>
-                <div className="landkoala-score-card">
-                  <p>Overall suitability</p>
-                  <strong>{analysis.result.score.overall}/100</strong>
-                </div>
+              {analysis.result ? (
+                <>
+                  <div className="landkoala-score-card">
+                    <p>Overall suitability</p>
+                    <strong>{analysis.result.score.overall}/100</strong>
+                  </div>
 
-                <div className="landkoala-metrics">
-                  <article>
-                    <p>Population</p>
-                    <strong>{analysis.result.score.components.population}</strong>
-                  </article>
-                  <article>
-                    <p>Competition</p>
-                    <strong>{analysis.result.score.components.competition}</strong>
-                  </article>
-                  <article>
-                    <p>Income</p>
-                    <strong>{analysis.result.score.components.income}</strong>
-                  </article>
-                </div>
+                  <div className="landkoala-metrics">
+                    <article>
+                      <p>Population</p>
+                      <strong>{analysis.result.score.components.population}</strong>
+                    </article>
+                    <article>
+                      <p>Competition</p>
+                      <strong>{analysis.result.score.components.competition}</strong>
+                    </article>
+                    <article>
+                      <p>Income</p>
+                      <strong>{analysis.result.score.components.income}</strong>
+                    </article>
+                  </div>
 
-                <div className="landkoala-data-grid">
-                  <p>
-                    <span>Population:</span>
-                    <strong>{analysis.result.demographics.population ?? "N/A"}</strong>
-                  </p>
-                  <p>
-                    <span>Median income:</span>
-                    <strong>
-                      {analysis.result.demographics.medianIncome
-                        ? `$${analysis.result.demographics.medianIncome.toLocaleString()}`
-                        : "N/A"}
-                    </strong>
-                  </p>
-                  <p>
-                    <span>Competitors:</span>
-                    <strong>{analysis.result.competition.count}</strong>
-                  </p>
-                  <p>
-                    <span>Nearest:</span>
-                    <strong>
-                      {analysis.result.competition.nearestKm
-                        ? `${analysis.result.competition.nearestKm.toFixed(2)} km`
-                        : "N/A"}
-                    </strong>
-                  </p>
-                </div>
+                  <div className="landkoala-data-grid">
+                    <p>
+                      <span>Population:</span>
+                      <strong>{analysis.result.demographics.population ?? "N/A"}</strong>
+                    </p>
+                    <p>
+                      <span>Median income:</span>
+                      <strong>
+                        {analysis.result.demographics.medianIncome
+                          ? `$${analysis.result.demographics.medianIncome.toLocaleString()}`
+                          : "N/A"}
+                      </strong>
+                    </p>
+                    <p>
+                      <span>Competitors:</span>
+                      <strong>{analysis.result.competition.count}</strong>
+                    </p>
+                    <p>
+                      <span>Nearest:</span>
+                      <strong>
+                        {analysis.result.competition.nearestKm
+                          ? `${analysis.result.competition.nearestKm.toFixed(2)} km`
+                          : "N/A"}
+                      </strong>
+                    </p>
+                  </div>
 
-                <h3 className="landkoala-section-subtitle">Closest competitors</h3>
-                <ul className="landkoala-competitor-list">
-                  {analysis.result.competition.sample.map((competitor) => (
-                    <li key={`${competitor.id}-${competitor.lat}`}>
-                      <span>{competitor.name ?? "Unnamed place"}</span>
-                      <strong>{competitor.distanceKm.toFixed(2)} km</strong>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : null}
+                  <h3 className="landkoala-section-subtitle">Closest competitors</h3>
+                  <ul className="landkoala-competitor-list">
+                    {analysis.result.competition.sample.map((competitor) => (
+                      <li key={`${competitor.id}-${competitor.lat}`}>
+                        <span>{competitor.name ?? "Unnamed place"}</span>
+                        <strong>{competitor.distanceKm.toFixed(2)} km</strong>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+            </section>
+
+            <section id="data-sources" className="landkoala-datasources">
+              <h3 className="landkoala-section-subtitle">Data sources</h3>
+              <ul>
+                <li>OpenStreetMap Nominatim for geocoding</li>
+                <li>OpenStreetMap Overpass for competitor points of interest</li>
+                <li>US Census ACS for population and income context</li>
+              </ul>
+            </section>
           </div>
         </aside>
       </main>
