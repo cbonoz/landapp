@@ -10,10 +10,24 @@ export default function AboutPage() {
           <h1 className="landkoala-title">Open datasets powering LandKoala</h1>
 
           <section className="landkoala-static-section">
+            <h2>Open source repository</h2>
+            <a
+              className="landkoala-creator-link"
+              href="https://github.com/cbonoz/landapp"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Open LandKoala repository on GitHub"
+            >
+              <span className="landkoala-creator-name">github.com/cbonoz/landapp</span>
+              <span className="landkoala-creator-url">View source {"->"}</span>
+            </a>
+          </section>
+
+          <section className="landkoala-static-section">
             <h2>Notice</h2>
             <p className="landkoala-disclaimer">
-              LandKoala is a free app and is provided as is, without guarantee or warranty of
-              any kind.
+              LandKoala is open source and free to use, and is provided as is, without guarantee
+              or warranty of any kind.
             </p>
           </section>
 
