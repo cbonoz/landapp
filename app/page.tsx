@@ -52,6 +52,51 @@ function formatCategory(category: string | null | undefined): string {
   return `${namespace}: ${label}`;
 }
 
+function clampScoreToPercent(score: number): number {
+  return Math.max(0, Math.min(100, score));
+}
+
+function mixHexColor(from: string, to: string, t: number): string {
+  const value = Math.max(0, Math.min(1, t));
+  const parse = (hex: string) => {
+    const normalized = hex.replace("#", "");
+    return {
+      r: Number.parseInt(normalized.slice(0, 2), 16),
+      g: Number.parseInt(normalized.slice(2, 4), 16),
+      b: Number.parseInt(normalized.slice(4, 6), 16),
+    };
+  };
+
+  const a = parse(from);
+  const b = parse(to);
+
+  const r = Math.round(a.r + (b.r - a.r) * value);
+  const g = Math.round(a.g + (b.g - a.g) * value);
+  const blue = Math.round(a.b + (b.b - a.b) * value);
+
+  return `rgb(${r}, ${g}, ${blue})`;
+}
+
+function getScoreCardGradient(score: number): string {
+  const normalizedScore = clampScoreToPercent(score);
+
+  const red = "#b44532";
+  const yellow = "#b08f2d";
+  const green = "#2f8552";
+
+  const baseColor =
+    normalizedScore <= 50
+      ? mixHexColor(red, yellow, normalizedScore / 50)
+      : mixHexColor(yellow, green, (normalizedScore - 50) / 50);
+
+  const darkerColor =
+    normalizedScore <= 50
+      ? mixHexColor("#803325", "#7f6521", normalizedScore / 50)
+      : mixHexColor("#7f6521", "#245f3b", (normalizedScore - 50) / 50);
+
+  return `linear-gradient(145deg, ${baseColor}, ${darkerColor})`;
+}
+
 export default function Home() {
   const [panelOpen, setPanelOpen] = useState(true);
   const [showResultsView, setShowResultsView] = useState(false);
@@ -72,6 +117,8 @@ export default function Home() {
   const [draftCenter, setDraftCenter] = useState<MapCenter | null>(null);
   const [selectedCompetitorKey, setSelectedCompetitorKey] = useState<string | null>(null);
   const [mapPickLoading, setMapPickLoading] = useState(false);
+  const [scoreInfoOpen, setScoreInfoOpen] = useState(false);
+  const [showAnalyzeErrorToast, setShowAnalyzeErrorToast] = useState(false);
   const mapPickRequestRef = useRef(0);
   const insightsRef = useRef<HTMLElement | null>(null);
 
@@ -107,6 +154,18 @@ export default function Home() {
       window.cancelAnimationFrame(frameId);
     };
   }, [analysis.result]);
+
+  useEffect(() => {
+    if (!analysis.error || !showAnalyzeErrorToast) return;
+
+    const timerId = window.setTimeout(() => {
+      setShowAnalyzeErrorToast(false);
+    }, 4500);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [analysis.error, showAnalyzeErrorToast]);
 
   async function reverseGeocodeToAddress(lat: number, lon: number): Promise<string | null> {
     const params = new URLSearchParams({
@@ -249,6 +308,7 @@ export default function Home() {
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setShowAnalyzeErrorToast(false);
     setAnalysis({ loading: true, error: null, result: null });
 
     try {
@@ -274,6 +334,7 @@ export default function Home() {
       if (!response.ok || "error" in payload) {
         const message = "error" in payload ? payload.error : "Analysis failed.";
         setAnalysis({ loading: false, error: message, result: null });
+        setShowAnalyzeErrorToast(true);
         return;
       }
 
@@ -284,6 +345,7 @@ export default function Home() {
         error: "Network error. Please try again.",
         result: null,
       });
+      setShowAnalyzeErrorToast(true);
     }
   }
 
@@ -292,6 +354,20 @@ export default function Home() {
       <AppHeader panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((value) => !value)} />
 
       <main className="landkoala-stage" id="map-view">
+        {analysis.error && showAnalyzeErrorToast ? (
+          <div className="landkoala-toast landkoala-toast-error" role="alert" aria-live="assertive">
+            <span>{analysis.error}</span>
+            <button
+              type="button"
+              className="landkoala-toast-dismiss"
+              aria-label="Dismiss analysis error"
+              onClick={() => setShowAnalyzeErrorToast(false)}
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : null}
+
         <ResultsMap
           result={analysis.result}
           selectedCenter={draftCenter}
@@ -439,9 +515,6 @@ export default function Home() {
                 </button>
               </div>
             )}
-
-            {analysis.error ? <p className="landkoala-error">{analysis.error}</p> : null}
-
             <section id="insights" ref={insightsRef}>
               {!analysis.result && !analysis.loading && !showResultsView ? (
                 <p className="landkoala-muted">
@@ -451,9 +524,50 @@ export default function Home() {
 
               {analysis.result ? (
                 <>
-                  <div className="landkoala-score-card">
-                    <p>Overall suitability</p>
+                  <div
+                    className="landkoala-score-card"
+                    style={{ background: getScoreCardGradient(analysis.result.score.overall) }}
+                  >
+                    <div className="landkoala-score-head">
+                      <p>Overall suitability</p>
+                      <button
+                        type="button"
+                        className="landkoala-score-info-button"
+                        aria-label="How the overall suitability score is calculated"
+                        aria-expanded={scoreInfoOpen}
+                        aria-controls="landkoala-score-explainer"
+                        onClick={() => setScoreInfoOpen((value) => !value)}
+                      >
+                        i
+                      </button>
+                    </div>
                     <strong>{analysis.result.score.overall}/100</strong>
+                    {scoreInfoOpen ? (
+                      <div
+                        id="landkoala-score-explainer"
+                        className="landkoala-score-explainer"
+                        role="status"
+                      >
+                        <p>
+                          The score is a weighted blend of three normalized components, then
+                          scaled to 100.
+                        </p>
+                        <p>
+                          Formula: overall = population x {analysis.result.score.weights.population.toFixed(2)} +
+                          competition x {analysis.result.score.weights.competition.toFixed(2)} + income x {" "}
+                          {analysis.result.score.weights.income.toFixed(2)}.
+                        </p>
+                        <ul>
+                          <li>Population = nearby population divided by 12,000.</li>
+                          <li>Competition = 1 - (competitor density / 5 competitors per km^2).</li>
+                          <li>Income = median household income divided by 100,000.</li>
+                        </ul>
+                        <p>
+                          Current components: population {analysis.result.score.components.population}, competition{" "}
+                          {analysis.result.score.components.competition}, income {analysis.result.score.components.income}.
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="landkoala-metrics">

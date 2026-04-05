@@ -15,22 +15,42 @@ import type { LatLngBoundsExpression } from "leaflet";
 import L from "leaflet";
 import type { AnalyzeResponse } from "@/app/lib/types";
 
+function svgToDataUrl(svg: string): string {
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+const centerIconSvg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 38 38" fill="none">
+  <circle cx="19" cy="19" r="18" fill="#2f8552"/>
+  <circle cx="19" cy="19" r="12" fill="#f3fff5"/>
+  <circle cx="19" cy="19" r="7" fill="#2f8552"/>
+  <circle cx="19" cy="19" r="3.2" fill="#f3fff5"/>
+  <path d="M19 0.5V7.5M19 30.5V37.5M0.5 19H7.5M30.5 19H37.5" stroke="#153821" stroke-width="1.5" stroke-linecap="round"/>
+</svg>
+`;
+
+const competitorIconSvg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="34" height="44" viewBox="0 0 34 44" fill="none">
+  <path d="M17 2.5C9.3 2.5 3.1 8.7 3.1 16.4C3.1 27.8 16 40.3 16.6 40.8C16.8 41 17.2 41 17.4 40.8C18 40.3 30.9 27.8 30.9 16.4C30.9 8.7 24.7 2.5 17 2.5Z" fill="#d56a4e" stroke="#7a2f1b" stroke-width="1.8"/>
+  <circle cx="17" cy="16" r="6.2" fill="#fff4ef"/>
+  <path d="M12.7 17.3H21.3M12.7 14.7H21.3M14.1 19.9H19.9" stroke="#9d3f2a" stroke-width="1.6" stroke-linecap="round"/>
+</svg>
+`;
+
 const centerIcon = L.icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
+  iconUrl: svgToDataUrl(centerIconSvg),
+  iconSize: [38, 38],
+  iconAnchor: [19, 19],
+  popupAnchor: [0, -16],
+  className: "landkoala-center-pin",
 });
 
 const competitorIcon = L.icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
+  iconUrl: svgToDataUrl(competitorIconSvg),
+  iconSize: [34, 44],
+  iconAnchor: [17, 42],
+  popupAnchor: [0, -35],
+  className: "landkoala-competitor-pin",
 });
 
 function FitToBounds({
@@ -190,19 +210,17 @@ function FixMapSizing({ trigger }: { trigger: string }) {
 
 function SyncDefaultView({
   center,
-  zoom,
   enabled,
 }: {
   center: [number, number];
-  zoom: number;
   enabled: boolean;
 }) {
   const map = useMap();
 
   useEffect(() => {
     if (!enabled) return;
-    map.flyTo(center, zoom, { animate: true, duration: 0.35 });
-  }, [center, enabled, map, zoom]);
+    map.flyTo(center, map.getZoom(), { animate: true, duration: 0.35 });
+  }, [center, enabled, map]);
 
   return null;
 }
@@ -303,7 +321,6 @@ export function ResultsMap({
         />
         <SyncDefaultView
           center={[centerLat, centerLon]}
-          zoom={11}
           enabled={!result}
         />
         <FixMapSizing
