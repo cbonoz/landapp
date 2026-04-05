@@ -15,7 +15,9 @@ export function AppHeader({ panelOpen, onTogglePanel }: AppHeaderProps) {
 
   return (
     <header className="landkoala-header">
-      <AppLogo />
+      <Link href="/" className="landkoala-logo-link" aria-label="Go to map home">
+        <AppLogo />
+      </Link>
       <nav className="landkoala-nav" aria-label="Primary">
         <Link href="/" className={pathname === "/" ? "is-active" : undefined}>
           Map
@@ -27,10 +29,10 @@ export function AppHeader({ panelOpen, onTogglePanel }: AppHeaderProps) {
           Insights
         </Link>
         <Link
-          href="/data-sources"
-          className={pathname === "/data-sources" ? "is-active" : undefined}
+          href="/about"
+          className={pathname === "/about" ? "is-active" : undefined}
         >
-          Data Sources
+          About
         </Link>
       </nav>
       <button

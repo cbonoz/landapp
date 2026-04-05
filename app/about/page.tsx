@@ -1,13 +1,21 @@
 import { AppHeader } from "@/app/components/AppHeader";
 
-export default function DataSourcesPage() {
+export default function AboutPage() {
   return (
     <div className="landkoala-shell landkoala-shell-focus">
       <AppHeader />
       <main className="landkoala-static-page">
         <section className="landkoala-static-card">
-          <p className="landkoala-kicker">Data Sources</p>
+          <p className="landkoala-kicker">About</p>
           <h1 className="landkoala-title">Open datasets powering LandKoala</h1>
+
+          <section className="landkoala-static-section">
+            <h2>Notice</h2>
+            <p className="landkoala-disclaimer">
+              LandKoala is a free app and is provided as is, without guarantee or warranty of
+              any kind.
+            </p>
+          </section>
 
           <section className="landkoala-static-section">
             <div className="landkoala-static-grid">
@@ -47,6 +55,20 @@ export default function DataSourcesPage() {
               <li>OSM completeness depends on local contributor coverage.</li>
               <li>Public endpoints can rate-limit under high request volume.</li>
             </ul>
+          </section>
+
+          <section className="landkoala-static-section">
+            <h2>Created by</h2>
+            <a
+              className="landkoala-creator-link"
+              href="https://x.com/chrisbcore"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Open chrisbcore on X"
+            >
+              <span className="landkoala-creator-name">@chrisbcore</span>
+              <span className="landkoala-creator-url">x.com/chrisbcore {"->"}</span>
+            </a>
           </section>
         </section>
       </main>

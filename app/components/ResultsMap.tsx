@@ -53,6 +53,21 @@ const competitorIcon = L.icon({
   className: "landkoala-competitor-pin",
 });
 
+const userLocationIconSvg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28" fill="none">
+  <circle cx="14" cy="14" r="11" fill="#3b82f6" fill-opacity="0.28"/>
+  <circle cx="14" cy="14" r="6.5" fill="#1d4ed8" stroke="#ffffff" stroke-width="2"/>
+</svg>
+`;
+
+const userLocationIcon = L.icon({
+  iconUrl: svgToDataUrl(userLocationIconSvg),
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+  popupAnchor: [0, -14],
+  className: "landkoala-user-location-pin",
+});
+
 function FitToBounds({
   bounds,
   fitKey,
@@ -373,6 +388,14 @@ export function ResultsMap({
               <strong>Selected center</strong>
               <br />
               Drag map and click to move this pin.
+            </Popup>
+          </Marker>
+        ) : userCenter ? (
+          <Marker position={userCenter} icon={userLocationIcon}>
+            <Popup>
+              <strong>Current location</strong>
+              <br />
+              Using your browser location as the map start point.
             </Popup>
           </Marker>
         ) : null}

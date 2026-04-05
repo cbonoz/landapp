@@ -57,6 +57,17 @@ body {
   gap: 0.65rem;
 }
 
+.landkoala-logo-link {
+  text-decoration: none;
+  color: inherit;
+  border-radius: 0.75rem;
+}
+
+.landkoala-logo-link:focus-visible {
+  outline: 2px solid #2f8552;
+  outline-offset: 2px;
+}
+
 .landkoala-logo-mark {
   width: 2rem;
   height: 2rem;
@@ -264,6 +275,65 @@ body {
   cursor: progress;
 }
 
+.landkoala-secondary-button {
+  border: 1px solid #b9cda7;
+  border-radius: 0.8rem;
+  padding: 0.72rem 0.9rem;
+  cursor: pointer;
+  font-weight: 700;
+  color: #284429;
+  background: linear-gradient(135deg, #f1f9eb, #dcedce);
+}
+
+.landkoala-secondary-button:disabled {
+  opacity: 0.75;
+  cursor: progress;
+}
+
+.landkoala-recommendation-card {
+  margin-top: 0.75rem;
+  border: 1px solid #cfdfbc;
+  background: #f5fbec;
+  border-radius: 0.85rem;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.landkoala-recommendation-card h3 {
+  font-size: 1rem;
+  font-weight: 650;
+  color: #2e4d2f;
+}
+
+.landkoala-recommendation-card p {
+  font-size: 0.86rem;
+  color: #426043;
+}
+
+.landkoala-recommendation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.landkoala-recommendation-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  border: 1px solid #d8e5ca;
+  border-radius: 0.6rem;
+  background: #ffffff;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.83rem;
+}
+
+.landkoala-recommendation-list strong {
+  color: #2d4b2e;
+}
+
 .landkoala-section-title {
   font-size: 1.2rem;
   font-weight: 620;
@@ -399,6 +469,13 @@ body {
   display: grid;
   gap: 0.3rem;
   font-size: 0.83rem;
+}
+
+.landkoala-warning-box ul {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.2rem;
 }
 
 .landkoala-map-wrap {
@@ -598,6 +675,51 @@ body {
   display: grid;
   gap: 0.45rem;
   color: #445644;
+}
+
+.landkoala-creator-link {
+  margin-top: 0.7rem;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-decoration: none;
+  color: #233724;
+  border: 1px solid #d8ccb6;
+  border-radius: 0.75rem;
+  background: linear-gradient(145deg, #fffef9 0%, #f7f0e2 100%);
+  padding: 0.62rem 0.78rem;
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.landkoala-creator-link:hover {
+  transform: translateY(-1px);
+  border-color: #c6b99e;
+  box-shadow: 0 8px 20px rgba(44, 65, 39, 0.09);
+}
+
+.landkoala-creator-link:focus-visible {
+  outline: 2px solid #2f8552;
+  outline-offset: 2px;
+}
+
+.landkoala-creator-name {
+  font-size: 0.96rem;
+  font-weight: 640;
+  line-height: 1.2;
+}
+
+.landkoala-creator-url {
+  font-size: 0.8rem;
+  color: #526750;
+}
+
+.landkoala-disclaimer {
+  margin-top: 0.7rem;
+  border-left: 3px solid #d5c7ae;
+  padding: 0.2rem 0 0.2rem 0.7rem;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: #586a53;
 }
 
 .landkoala-datasources {

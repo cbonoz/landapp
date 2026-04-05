@@ -4,7 +4,12 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { AppHeader } from "@/app/components/AppHeader";
 import { BUSINESS_PRESETS } from "@/app/lib/business-presets";
-import type { AnalyzeResponse, BusinessPreset, CompetitorPoint } from "@/app/lib/types";
+import type {
+  AnalyzeResponse,
+  BusinessPreset,
+  CompetitorPoint,
+  RecommendResponse,
+} from "@/app/lib/types";
 
 const ResultsMap = dynamic(
   () => import("@/app/components/ResultsMap").then((mod) => mod.ResultsMap),
@@ -19,6 +24,11 @@ type AnalysisState = {
   result: AnalyzeResponse | null;
 };
 
+type RecommendationState = {
+  loading: boolean;
+  result: RecommendResponse | null;
+};
+
 type AddressSuggestion = {
   label: string;
   lat: number;
@@ -29,6 +39,8 @@ type MapCenter = {
   lat: number;
   lon: number;
 };
+
+type WeightKey = "population" | "competition" | "income";
 
 const presetOptions = Object.entries(BUSINESS_PRESETS) as Array<
   [BusinessPreset, (typeof BUSINESS_PRESETS)[BusinessPreset]]
@@ -97,6 +109,22 @@ function getScoreCardGradient(score: number): string {
   return `linear-gradient(145deg, ${baseColor}, ${darkerColor})`;
 }
 
+function getAnalysisRecoveryHints(errorMessage: string | null): string[] {
+  if (!errorMessage) return [];
+
+  const normalized = errorMessage.toLowerCase();
+  if (!normalized.includes("competition") && !normalized.includes("overpass")) {
+    return [];
+  }
+
+  return [
+    "Reduce radius to 1-3 km and retry.",
+    "Try another business type to reduce heavy tag queries.",
+    "Use Recommend mode to retry across alternate provider endpoints.",
+    "Retry in 1-2 minutes if the provider is rate-limited.",
+  ];
+}
+
 export default function Home() {
   const [panelOpen, setPanelOpen] = useState(true);
   const [showResultsView, setShowResultsView] = useState(false);
@@ -114,6 +142,10 @@ export default function Home() {
     error: null,
     result: null,
   });
+  const [recommendation, setRecommendation] = useState<RecommendationState>({
+    loading: false,
+    result: null,
+  });
   const [draftCenter, setDraftCenter] = useState<MapCenter | null>(null);
   const [selectedCompetitorKey, setSelectedCompetitorKey] = useState<string | null>(null);
   const [mapPickLoading, setMapPickLoading] = useState(false);
@@ -122,9 +154,45 @@ export default function Home() {
   const mapPickRequestRef = useRef(0);
   const insightsRef = useRef<HTMLElement | null>(null);
 
-  const weightTotal = useMemo(
-    () => populationWeight + competitionWeight + incomeWeight,
-    [populationWeight, competitionWeight, incomeWeight],
+  function onWeightChange(key: WeightKey, value: number) {
+    const nextValue = Math.max(0, Math.min(100, value));
+    const current = {
+      population: populationWeight,
+      competition: competitionWeight,
+      income: incomeWeight,
+    };
+    const otherKeys = (Object.keys(current) as WeightKey[]).filter((candidate) => candidate !== key);
+    const remaining = 100 - nextValue;
+    const sumOtherCurrent = otherKeys.reduce((sum, otherKey) => sum + current[otherKey], 0);
+
+    let firstOther = 0;
+    let secondOther = 0;
+
+    if (sumOtherCurrent <= 0) {
+      firstOther = Math.floor(remaining / 2);
+      secondOther = remaining - firstOther;
+    } else {
+      firstOther = Math.round((remaining * current[otherKeys[0]]) / sumOtherCurrent);
+      secondOther = remaining - firstOther;
+    }
+
+    const next = {
+      population: key === "population" ? nextValue : 0,
+      competition: key === "competition" ? nextValue : 0,
+      income: key === "income" ? nextValue : 0,
+    };
+
+    next[otherKeys[0]] = firstOther;
+    next[otherKeys[1]] = secondOther;
+
+    setPopulationWeight(next.population);
+    setCompetitionWeight(next.competition);
+    setIncomeWeight(next.income);
+  }
+
+  const analysisRecoveryHints = useMemo(
+    () => getAnalysisRecoveryHints(analysis.error),
+    [analysis.error],
   );
 
   const selectedCompetitor = useMemo(() => {
@@ -309,6 +377,7 @@ export default function Home() {
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setShowAnalyzeErrorToast(false);
+    setRecommendation({ loading: false, result: null });
     setAnalysis({ loading: true, error: null, result: null });
 
     try {
@@ -343,6 +412,85 @@ export default function Home() {
       setAnalysis({
         loading: false,
         error: "Network error. Please try again.",
+        result: null,
+      });
+      setShowAnalyzeErrorToast(true);
+    }
+  }
+
+  async function getBrowserLocation(): Promise<{ lat: number; lon: number } | null> {
+    if (typeof window === "undefined" || !navigator.geolocation) {
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            lat: position.coords.latitude,
+            lon: position.coords.longitude,
+          });
+        },
+        () => resolve(null),
+        {
+          enableHighAccuracy: false,
+          timeout: 5000,
+          maximumAge: 600000,
+        },
+      );
+    });
+  }
+
+  async function onRecommendStart() {
+    setShowAnalyzeErrorToast(false);
+    setRecommendation({ loading: true, result: null });
+    setAnalysis({ loading: true, error: null, result: null });
+
+    try {
+      const geo = await getBrowserLocation();
+
+      const response = await fetch("/api/recommend", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          radiusKm,
+          lat: geo?.lat,
+          lon: geo?.lon,
+          weights: {
+            population: populationWeight,
+            competition: competitionWeight,
+            income: incomeWeight,
+          },
+        }),
+      });
+
+      const payload = (await response.json()) as RecommendResponse | { error: string };
+
+      if (!response.ok || "error" in payload) {
+        const message = "error" in payload ? payload.error : "Recommendation failed.";
+        setRecommendation({ loading: false, result: null });
+        setAnalysis({ loading: false, error: message, result: null });
+        setShowAnalyzeErrorToast(true);
+        return;
+      }
+
+      setBusinessPreset(payload.selectedPreset);
+      setDraftCenter(payload.search.usedCoordinates);
+      setAddress(
+        payload.search.source === "geolocation"
+          ? `${payload.search.usedCoordinates.lat.toFixed(6)}, ${payload.search.usedCoordinates.lon.toFixed(6)}`
+          : payload.search.address,
+      );
+      setAddressSuggestions([]);
+      setRecommendation({ loading: false, result: payload });
+      setAnalysis({ loading: false, error: null, result: payload.analysis });
+    } catch {
+      setRecommendation({ loading: false, result: null });
+      setAnalysis({
+        loading: false,
+        error: "Network error while generating recommendations. Please try again.",
         result: null,
       });
       setShowAnalyzeErrorToast(true);
@@ -391,9 +539,30 @@ export default function Home() {
             {!showResultsView ? (
               <>
                 <p className="landkoala-subtitle">
-                  Enter a US address, select a business preset, and score a radius based on
-                  population, local competition, and tract-level income.
+                  Search a US address, choose a preset, then score a radius.
                 </p>
+
+                {analysis.error && analysisRecoveryHints.length > 0 ? (
+                  <div className="landkoala-warning-box" role="status" aria-live="polite">
+                    <strong>How to recover</strong>
+                    <ul>
+                      {analysisRecoveryHints.map((hint) => (
+                        <li key={hint}>{hint}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  className="landkoala-secondary-button"
+                  onClick={onRecommendStart}
+                  disabled={analysis.loading || recommendation.loading}
+                >
+                  {recommendation.loading ? "Finding recommendation..." : "Recommend what to start for me"}
+                </button>
+
+                <p className="landkoala-hint">Auto-recommend checks all presets and picks the strongest fit.</p>
 
                 <form className="landkoala-form" onSubmit={onSubmit}>
                   <label>
@@ -468,7 +637,7 @@ export default function Home() {
                         min={0}
                         max={100}
                         value={populationWeight}
-                        onChange={(event) => setPopulationWeight(Number(event.target.value))}
+                        onChange={(event) => onWeightChange("population", Number(event.target.value))}
                       />
                     </label>
                     <label>
@@ -478,7 +647,7 @@ export default function Home() {
                         min={0}
                         max={100}
                         value={competitionWeight}
-                        onChange={(event) => setCompetitionWeight(Number(event.target.value))}
+                        onChange={(event) => onWeightChange("competition", Number(event.target.value))}
                       />
                     </label>
                     <label>
@@ -488,12 +657,10 @@ export default function Home() {
                         min={0}
                         max={100}
                         value={incomeWeight}
-                        onChange={(event) => setIncomeWeight(Number(event.target.value))}
+                        onChange={(event) => onWeightChange("income", Number(event.target.value))}
                       />
                     </label>
                   </div>
-
-                  <p className="landkoala-hint">Current weight total: {weightTotal}</p>
 
                   <button type="submit" disabled={analysis.loading}>
                     {analysis.loading ? "Scoring area..." : "Analyze market"}
@@ -516,14 +683,38 @@ export default function Home() {
               </div>
             )}
             <section id="insights" ref={insightsRef}>
-              {!analysis.result && !analysis.loading && !showResultsView ? (
-                <p className="landkoala-muted">
-                  Run an analysis to view score and competitor sample.
-                </p>
-              ) : null}
-
               {analysis.result ? (
                 <>
+                  {recommendation.result ? (
+                    <section className="landkoala-recommendation-card" aria-live="polite">
+                      <p className="landkoala-kicker">Auto recommendation</p>
+                      <h3>
+                        Start with {BUSINESS_PRESETS[recommendation.result.selectedPreset].label}
+                      </h3>
+                      <p>
+                        Based on {recommendation.result.search.source === "default"
+                          ? recommendation.result.search.address
+                          : recommendation.result.search.source === "geolocation"
+                            ? "your current location"
+                            : recommendation.result.search.address}
+                        {" "}
+                        within {recommendation.result.search.radiusKm} km.
+                      </p>
+
+                      <ul className="landkoala-recommendation-list">
+                        {recommendation.result.recommendations.map((item) => (
+                          <li key={item.preset}>
+                            <span>
+                              {item.label}
+                              {item.preset === recommendation.result?.selectedPreset ? " (recommended)" : ""}
+                            </span>
+                            <strong>{item.score.toFixed(1)}</strong>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  ) : null}
+
                   <div
                     className="landkoala-score-card"
                     style={{ background: getScoreCardGradient(analysis.result.score.overall) }}

@@ -1,4 +1,16 @@
-export type BusinessPreset = "coffee" | "grocery" | "gym" | "restaurant";
+export type BusinessPreset =
+  | "coffee"
+  | "grocery"
+  | "gym"
+  | "restaurant"
+  | "bakery"
+  | "pharmacy"
+  | "salon"
+  | "daycare"
+  | "pet"
+  | "hardware"
+  | "laundromat"
+  | "dental";
 
 export type ScoreWeights = {
   population: number;
@@ -88,4 +100,33 @@ export type AnalyzeResponse = {
   opportunityGrid: OpportunityCell[];
   score: ScoreBreakdown;
   warnings: string[];
+};
+
+export type RecommendationItem = {
+  preset: BusinessPreset;
+  label: string;
+  score: number;
+  competitorCount: number;
+  nearestCompetitorKm: number | null;
+  rationale: string;
+};
+
+export type RecommendRequest = {
+  address?: string;
+  radiusKm?: number;
+  lat?: number;
+  lon?: number;
+  weights?: Partial<ScoreWeights>;
+};
+
+export type RecommendResponse = {
+  search: {
+    address: string;
+    radiusKm: number;
+    usedCoordinates: Coordinates;
+    source: "geolocation" | "address" | "default";
+  };
+  recommendations: RecommendationItem[];
+  selectedPreset: BusinessPreset;
+  analysis: AnalyzeResponse;
 };

@@ -15,6 +15,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "LandKoala",
   description: "Score underserved store locations with free Census and OSM data.",
+  icons: {
+    icon: "/icon",
+  },
 };
 
 export default function RootLayout({

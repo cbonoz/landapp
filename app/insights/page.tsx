@@ -14,6 +14,14 @@ export default function InsightsPage() {
           </p>
 
           <section className="landkoala-static-section">
+            <h2>Quick start</h2>
+            <p>
+              Enter a US address, select a business preset, and score a radius based on
+              population, local competition, and tract-level income.
+            </p>
+          </section>
+
+          <section className="landkoala-static-section">
             <h2>Scoring components</h2>
             <div className="landkoala-static-grid">
               <article className="landkoala-static-metric">
