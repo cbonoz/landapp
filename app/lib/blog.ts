@@ -3,6 +3,7 @@ import path from "path";
 import matter from "gray-matter";
 import { remark } from "remark";
 import html from "remark-html";
+import remarkGfm from "remark-gfm";
 
 const postsDirectory = path.join(process.cwd(), "content/blog");
 
@@ -68,7 +69,9 @@ export function getPostBySlug(slug: string): BlogPost | null {
     const matterResult = matter(fileContents);
 
     // Use remark to convert markdown into HTML string
+    // Include remarkGfm for table support
     const processedContent = remark()
+      .use(remarkGfm)
       .use(html)
       .processSync(matterResult.content);
     const contentHtml = processedContent.toString();
