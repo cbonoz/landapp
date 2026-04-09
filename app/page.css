@@ -102,6 +102,17 @@
 
 .landkoala-error-box p {
   margin: 0;
+  margin-bottom: 0.5rem;
+}
+
+.landkoala-error-box p:last-child {
+  margin-bottom: 0;
+}
+
+.landkoala-error-suggestion {
+  font-size: 0.85rem;
+  opacity: 0.95;
+  font-style: italic;
 }
 
 .landkoala-submit-button {

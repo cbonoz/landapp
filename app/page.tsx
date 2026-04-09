@@ -25,12 +25,36 @@ const presetOptions = Object.entries(BUSINESS_PRESETS) as Array<
   [BusinessPreset, (typeof BUSINESS_PRESETS)[BusinessPreset]]
 >;
 
+function parseAnalysisError(error: string): { message: string; suggestion?: string; canAutoRetry?: boolean } {
+  if (error.includes("timeout") || error.includes("timed out")) {
+    return {
+      message: "Search took too long.",
+      suggestion: "This usually works better with a smaller search area or trying a different location.",
+      canAutoRetry: true,
+    };
+  }
+  if (error.includes("429") || error.includes("temporarily unavailable")) {
+    return {
+      message: "The data service is temporarily busy.",
+      suggestion: "Please wait a moment and try again.",
+    };
+  }
+  if (error.includes("geocoding") || error.includes("No geocoding")) {
+    return {
+      message: "Could not find that address.",
+      suggestion: "Try being more specific (e.g., 'Seattle, WA' or '123 Main St, Portland, OR').",
+    };
+  }
+  return { message: error };
+}
+
 export default function Home() {
   const [businessPreset, setBusinessPreset] = useState<BusinessPreset>("coffee");
   const [location, setLocation] = useState("");
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [locationLookupError, setLocationLookupError] = useState<string | null>(null);
   const [expandedMetric, setExpandedMetric] = useState<ExpandedMetric>(null);
+  const [retryCountRef, setRetryCountRef] = useState(0);
   const [analysis, setAnalysis] = useState<AnalysisState>({
     loading: false,
     error: null,
@@ -74,12 +98,15 @@ export default function Home() {
     };
   }, [location]);
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>, smallerRadius: boolean = false) {
     event.preventDefault();
     setLocationLookupError(null);
     setAnalysis({ loading: true, error: null, result: null });
 
     try {
+      // Determine radius: start at 2km, go down to 1km on retry
+      const baseRadius = smallerRadius ? 1 : 2;
+      
       const response = await fetch("/api/analyze", {
         method: "POST",
         headers: {
@@ -87,7 +114,7 @@ export default function Home() {
         },
         body: JSON.stringify({
           address: location,
-          radiusKm: 3,
+          radiusKm: baseRadius,
           businessPreset,
           weights: {
             population: 50,
@@ -101,10 +128,23 @@ export default function Home() {
 
       if (!response.ok || "error" in payload) {
         const message = "error" in payload ? payload.error : "Analysis failed.";
+        const parsed = parseAnalysisError(message);
+        
+        // Auto-retry with smaller radius on timeout (only once)
+        if (parsed.canAutoRetry && !smallerRadius && retryCountRef < 1) {
+          setRetryCountRef((c) => c + 1);
+          // Set a short delay then retry with smaller radius
+          setTimeout(() => {
+            onSubmit({ preventDefault: () => {} } as FormEvent<HTMLFormElement>, true);
+          }, 800);
+          return;
+        }
+        
         setAnalysis({ loading: false, error: message, result: null });
         return;
       }
 
+      setRetryCountRef(0);
       setAnalysis({ loading: false, error: null, result: payload });
       setAddressSuggestions([]);
       setExpandedMetric(null);
@@ -190,13 +230,19 @@ export default function Home() {
                 )}
               </div>
 
-              {analysis.error && (
-                <div className="landkoala-error-box">
-                  <p>
-                    <strong>Unable to analyze this location.</strong> {analysis.error.includes("502") || analysis.error.includes("provider") ? "The data provider is temporarily unavailable. Try a different location or preset, or retry in a moment." : "Please check the address and try again."}
-                  </p>
-                </div>
-              )}
+              {analysis.error && (() => {
+                const parsed = parseAnalysisError(analysis.error);
+                return (
+                  <div className="landkoala-error-box">
+                    <p>
+                      <strong>{parsed.message}</strong>
+                    </p>
+                    {parsed.suggestion && (
+                      <p className="landkoala-error-suggestion">{parsed.suggestion}</p>
+                    )}
+                  </div>
+                );
+              })()}
 
               <button
                 type="submit"
