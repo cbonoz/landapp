@@ -33,6 +33,12 @@ body {
     linear-gradient(180deg, #f7f4ec 0%, #f1ecde 100%);
 }
 
+@media (max-width: 640px) {
+  .landkoala-shell {
+    padding: 1.5rem 0.75rem;
+  }
+}
+
 .landkoala-shell-focus {
   padding: 1rem;
   display: grid;
