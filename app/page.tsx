@@ -55,6 +55,7 @@ export default function Home() {
   const [locationLookupError, setLocationLookupError] = useState<string | null>(null);
   const [expandedMetric, setExpandedMetric] = useState<ExpandedMetric>(null);
   const [retryCountRef, setRetryCountRef] = useState(0);
+  const [loadingMessage, setLoadingMessage] = useState("Analyzing...");
   const [analysis, setAnalysis] = useState<AnalysisState>({
     loading: false,
     error: null,
@@ -102,6 +103,19 @@ export default function Home() {
     event.preventDefault();
     setLocationLookupError(null);
     setAnalysis({ loading: true, error: null, result: null });
+    setLoadingMessage("Analyzing...");
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 30000);
+
+    // Update message at 10s and 20s
+    const messageIntervalId = window.setInterval(() => {
+      setLoadingMessage((prev) => {
+        if (prev === "Analyzing...") return "Still working on it...";
+        if (prev === "Still working on it...") return "Almost there, one moment...";
+        return prev;
+      });
+    }, 10000);
 
     try {
       // Determine radius: start at 2km, go down to 1km on retry
@@ -122,8 +136,11 @@ export default function Home() {
             income: 15,
           },
         }),
+        signal: controller.signal,
       });
 
+      window.clearTimeout(timeoutId);
+      window.clearInterval(messageIntervalId);
       const payload = (await response.json()) as AnalyzeResponse | { error: string };
 
       if (!response.ok || "error" in payload) {
@@ -148,12 +165,22 @@ export default function Home() {
       setAnalysis({ loading: false, error: null, result: payload });
       setAddressSuggestions([]);
       setExpandedMetric(null);
-    } catch {
-      setAnalysis({
-        loading: false,
-        error: "Network error. Please try again.",
-        result: null,
-      });
+    } catch (error) {
+      window.clearTimeout(timeoutId);
+      window.clearInterval(messageIntervalId);
+      if (error instanceof Error && error.name === "AbortError") {
+        setAnalysis({
+          loading: false,
+          error: "Analysis took too long. Try a different location or a smaller area (1-2 km radius).",
+          result: null,
+        });
+      } else {
+        setAnalysis({
+          loading: false,
+          error: "Network error. Please try again.",
+          result: null,
+        });
+      }
     }
   }
 
@@ -259,7 +286,10 @@ export default function Home() {
         {analysis.result && (
           <section className="landkoala-results-section">
             <div className="landkoala-result-header">
-              <h2>Analysis Result</h2>
+              <div>
+                <h2>Analysis Result</h2>
+                <p className="landkoala-result-address">{analysis.result.query.address}</p>
+              </div>
               <button
                 type="button"
                 className="landkoala-back-button"

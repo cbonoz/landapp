@@ -164,13 +164,21 @@
 .landkoala-result-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 2rem;
+  gap: 1rem;
 }
 
 .landkoala-result-header h2 {
-  margin: 0;
+  margin: 0 0 0.5rem 0;
   color: #2d3436;
+}
+
+.landkoala-result-address {
+  margin: 0;
+  color: #636e72;
+  font-size: 0.95rem;
+  font-weight: 500;
 }
 
 .landkoala-back-button {
@@ -180,6 +188,8 @@
   border-radius: 4px;
   cursor: pointer;
   transition: background 0.2s;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .landkoala-back-button:hover {
