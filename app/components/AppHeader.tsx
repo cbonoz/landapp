@@ -13,27 +13,40 @@ export function AppHeader({ panelOpen, onTogglePanel }: AppHeaderProps) {
   const pathname = usePathname();
   const canTogglePanel = Boolean(onTogglePanel);
 
+  const isActive = (path: string) => {
+    if (path === "/") {
+      return pathname === "/";
+    }
+    return pathname.startsWith(path);
+  };
+
   return (
     <header className="landkoala-header">
       <Link href="/" className="landkoala-logo-link" aria-label="Go to home">
         <AppLogo />
       </Link>
       <nav className="landkoala-nav" aria-label="Primary">
-        <Link href="/" className={pathname === "/" ? "is-active" : undefined}>
+        <Link href="/" className={isActive("/") ? "is-active" : undefined}>
           Home
         </Link>
-        <Link href="/map" className={pathname === "/map" ? "is-active" : undefined}>
+        <Link href="/map" className={isActive("/map") ? "is-active" : undefined}>
           Map
         </Link>
         <Link
           href="/insights"
-          className={pathname === "/insights" ? "is-active" : undefined}
+          className={isActive("/insights") ? "is-active" : undefined}
         >
           Insights
         </Link>
         <Link
+          href="/blog"
+          className={isActive("/blog") ? "is-active" : undefined}
+        >
+          Blog
+        </Link>
+        <Link
           href="/about"
-          className={pathname === "/about" ? "is-active" : undefined}
+          className={isActive("/about") ? "is-active" : undefined}
         >
           About
         </Link>
