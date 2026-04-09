@@ -15,11 +15,14 @@ export function AppHeader({ panelOpen, onTogglePanel }: AppHeaderProps) {
 
   return (
     <header className="landkoala-header">
-      <Link href="/" className="landkoala-logo-link" aria-label="Go to map home">
+      <Link href="/" className="landkoala-logo-link" aria-label="Go to home">
         <AppLogo />
       </Link>
       <nav className="landkoala-nav" aria-label="Primary">
         <Link href="/" className={pathname === "/" ? "is-active" : undefined}>
+          Home
+        </Link>
+        <Link href="/map" className={pathname === "/map" ? "is-active" : undefined}>
           Map
         </Link>
         <Link

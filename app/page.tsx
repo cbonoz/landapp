@@ -1,33 +1,10 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import dynamic from "next/dynamic";
+import { FormEvent, useEffect, useState } from "react";
 import { AppHeader } from "@/app/components/AppHeader";
+import { CoffeeButton } from "@/app/components/CoffeeButton";
 import { BUSINESS_PRESETS } from "@/app/lib/business-presets";
-import type {
-  AnalyzeResponse,
-  BusinessPreset,
-  CompetitorPoint,
-  RecommendResponse,
-} from "@/app/lib/types";
-
-const ResultsMap = dynamic(
-  () => import("@/app/components/ResultsMap").then((mod) => mod.ResultsMap),
-  {
-    ssr: false,
-  },
-);
-
-type AnalysisState = {
-  loading: boolean;
-  error: string | null;
-  result: AnalyzeResponse | null;
-};
-
-type RecommendationState = {
-  loading: boolean;
-  result: RecommendResponse | null;
-};
+import type { AnalyzeResponse, BusinessPreset } from "@/app/lib/types";
 
 type AddressSuggestion = {
   label: string;
@@ -35,224 +12,33 @@ type AddressSuggestion = {
   lon: number;
 };
 
-type MapCenter = {
-  lat: number;
-  lon: number;
+type AnalysisState = {
+  loading: boolean;
+  error: string | null;
+  result: AnalyzeResponse | null;
 };
 
-type WeightKey = "population" | "competition" | "income";
+type ExpandedMetric = "population" | "income" | "competitors" | "nearest" | null;
 
 const presetOptions = Object.entries(BUSINESS_PRESETS) as Array<
   [BusinessPreset, (typeof BUSINESS_PRESETS)[BusinessPreset]]
 >;
 
-function getCompetitorKey(competitor: CompetitorPoint): string {
-  return `${competitor.id}:${competitor.lat}:${competitor.lon}`;
-}
-
-function formatCategory(category: string | null | undefined): string {
-  if (!category) return "Unknown";
-
-  const [namespace, value] = category.split(":");
-  if (!value) return category;
-
-  const label = value
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-
-  return `${namespace}: ${label}`;
-}
-
-function clampScoreToPercent(score: number): number {
-  return Math.max(0, Math.min(100, score));
-}
-
-function mixHexColor(from: string, to: string, t: number): string {
-  const value = Math.max(0, Math.min(1, t));
-  const parse = (hex: string) => {
-    const normalized = hex.replace("#", "");
-    return {
-      r: Number.parseInt(normalized.slice(0, 2), 16),
-      g: Number.parseInt(normalized.slice(2, 4), 16),
-      b: Number.parseInt(normalized.slice(4, 6), 16),
-    };
-  };
-
-  const a = parse(from);
-  const b = parse(to);
-
-  const r = Math.round(a.r + (b.r - a.r) * value);
-  const g = Math.round(a.g + (b.g - a.g) * value);
-  const blue = Math.round(a.b + (b.b - a.b) * value);
-
-  return `rgb(${r}, ${g}, ${blue})`;
-}
-
-function getScoreCardGradient(score: number): string {
-  const normalizedScore = clampScoreToPercent(score);
-
-  const red = "#b44532";
-  const yellow = "#b08f2d";
-  const green = "#2f8552";
-
-  const baseColor =
-    normalizedScore <= 50
-      ? mixHexColor(red, yellow, normalizedScore / 50)
-      : mixHexColor(yellow, green, (normalizedScore - 50) / 50);
-
-  const darkerColor =
-    normalizedScore <= 50
-      ? mixHexColor("#803325", "#7f6521", normalizedScore / 50)
-      : mixHexColor("#7f6521", "#245f3b", (normalizedScore - 50) / 50);
-
-  return `linear-gradient(145deg, ${baseColor}, ${darkerColor})`;
-}
-
-function getAnalysisRecoveryHints(errorMessage: string | null): string[] {
-  if (!errorMessage) return [];
-
-  const normalized = errorMessage.toLowerCase();
-  if (!normalized.includes("competition") && !normalized.includes("overpass")) {
-    return [];
-  }
-
-  return [
-    "Reduce radius to 1-3 km and retry.",
-    "Try another business type to reduce heavy tag queries.",
-    "Use Recommend mode to retry across alternate provider endpoints.",
-    "Retry in 1-2 minutes if the provider is rate-limited.",
-  ];
-}
-
 export default function Home() {
-  const [panelOpen, setPanelOpen] = useState(true);
-  const [showResultsView, setShowResultsView] = useState(false);
-  const [address, setAddress] = useState("Boston, MA");
-  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
-  const [locationLookupLoading, setLocationLookupLoading] = useState(false);
-  const [locationLookupError, setLocationLookupError] = useState<string | null>(null);
-  const [radiusKm, setRadiusKm] = useState(3);
   const [businessPreset, setBusinessPreset] = useState<BusinessPreset>("coffee");
-  const [populationWeight, setPopulationWeight] = useState(50);
-  const [competitionWeight, setCompetitionWeight] = useState(35);
-  const [incomeWeight, setIncomeWeight] = useState(15);
+  const [location, setLocation] = useState("");
+  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
+  const [locationLookupError, setLocationLookupError] = useState<string | null>(null);
+  const [expandedMetric, setExpandedMetric] = useState<ExpandedMetric>(null);
   const [analysis, setAnalysis] = useState<AnalysisState>({
     loading: false,
     error: null,
     result: null,
   });
-  const [recommendation, setRecommendation] = useState<RecommendationState>({
-    loading: false,
-    result: null,
-  });
-  const [draftCenter, setDraftCenter] = useState<MapCenter | null>(null);
-  const [selectedCompetitorKey, setSelectedCompetitorKey] = useState<string | null>(null);
-  const [mapPickLoading, setMapPickLoading] = useState(false);
-  const [scoreInfoOpen, setScoreInfoOpen] = useState(false);
-  const [showAnalyzeErrorToast, setShowAnalyzeErrorToast] = useState(false);
-  const mapPickRequestRef = useRef(0);
-  const insightsRef = useRef<HTMLElement | null>(null);
 
-  function onWeightChange(key: WeightKey, value: number) {
-    const nextValue = Math.max(0, Math.min(100, value));
-    const current = {
-      population: populationWeight,
-      competition: competitionWeight,
-      income: incomeWeight,
-    };
-    const otherKeys = (Object.keys(current) as WeightKey[]).filter((candidate) => candidate !== key);
-    const remaining = 100 - nextValue;
-    const sumOtherCurrent = otherKeys.reduce((sum, otherKey) => sum + current[otherKey], 0);
-
-    let firstOther = 0;
-    let secondOther = 0;
-
-    if (sumOtherCurrent <= 0) {
-      firstOther = Math.floor(remaining / 2);
-      secondOther = remaining - firstOther;
-    } else {
-      firstOther = Math.round((remaining * current[otherKeys[0]]) / sumOtherCurrent);
-      secondOther = remaining - firstOther;
-    }
-
-    const next = {
-      population: key === "population" ? nextValue : 0,
-      competition: key === "competition" ? nextValue : 0,
-      income: key === "income" ? nextValue : 0,
-    };
-
-    next[otherKeys[0]] = firstOther;
-    next[otherKeys[1]] = secondOther;
-
-    setPopulationWeight(next.population);
-    setCompetitionWeight(next.competition);
-    setIncomeWeight(next.income);
-  }
-
-  const analysisRecoveryHints = useMemo(
-    () => getAnalysisRecoveryHints(analysis.error),
-    [analysis.error],
-  );
-
-  const selectedCompetitor = useMemo(() => {
-    const sample = analysis.result?.competition.sample ?? [];
-    if (sample.length === 0) return null;
-
-    if (!selectedCompetitorKey) {
-      return sample[0];
-    }
-
-    return sample.find((competitor) => getCompetitorKey(competitor) === selectedCompetitorKey) ?? sample[0];
-  }, [analysis.result, selectedCompetitorKey]);
-
+  // Handle location autocomplete
   useEffect(() => {
-    if (!analysis.result) return;
-
-    setPanelOpen(true);
-    setShowResultsView(true);
-    const topCompetitor = analysis.result.competition.sample[0] ?? null;
-    setSelectedCompetitorKey(topCompetitor ? getCompetitorKey(topCompetitor) : null);
-
-    const frameId = window.requestAnimationFrame(() => {
-      insightsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-    };
-  }, [analysis.result]);
-
-  useEffect(() => {
-    if (!analysis.error || !showAnalyzeErrorToast) return;
-
-    const timerId = window.setTimeout(() => {
-      setShowAnalyzeErrorToast(false);
-    }, 4500);
-
-    return () => {
-      window.clearTimeout(timerId);
-    };
-  }, [analysis.error, showAnalyzeErrorToast]);
-
-  async function reverseGeocodeToAddress(lat: number, lon: number): Promise<string | null> {
-    const params = new URLSearchParams({
-      lat: String(lat),
-      lon: String(lon),
-    });
-
-    const response = await fetch(`/api/location?${params.toString()}`);
-    const payload = (await response.json()) as { address?: string | null; error?: string };
-
-    if (!response.ok || payload.error || !payload.address) {
-      return null;
-    }
-
-    return payload.address;
-  }
-
-  useEffect(() => {
-    const query = address.trim();
+    const query = location.trim();
 
     if (query.length < 3) {
       setAddressSuggestions([]);
@@ -285,99 +71,11 @@ export default function Home() {
       controller.abort();
       window.clearTimeout(timerId);
     };
-  }, [address]);
-
-  async function onUseMyLocation() {
-    if (typeof window === "undefined" || !navigator.geolocation) {
-      setLocationLookupError("Geolocation is not available in this browser.");
-      return;
-    }
-
-    setLocationLookupLoading(true);
-    setLocationLookupError(null);
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const center = {
-            lat: position.coords.latitude,
-            lon: position.coords.longitude,
-          };
-          setDraftCenter(center);
-
-          const resolvedAddress = await reverseGeocodeToAddress(
-            center.lat,
-            center.lon,
-          );
-
-          if (!resolvedAddress) {
-            setLocationLookupError("Could not resolve your location to an address.");
-            setLocationLookupLoading(false);
-            return;
-          }
-
-          setAddress(resolvedAddress);
-          setAddressSuggestions([]);
-          setLocationLookupLoading(false);
-        } catch {
-          setLocationLookupError("Location lookup failed. Please try again.");
-          setLocationLookupLoading(false);
-        }
-      },
-      () => {
-        setLocationLookupError("Location permission denied. You can still type an address.");
-        setLocationLookupLoading(false);
-      },
-      {
-        enableHighAccuracy: false,
-        timeout: 8000,
-        maximumAge: 300000,
-      },
-    );
-  }
-
-  async function onMapCenterPick(center: MapCenter) {
-    const requestId = mapPickRequestRef.current + 1;
-    mapPickRequestRef.current = requestId;
-
-    setLocationLookupError(null);
-    setMapPickLoading(true);
-    setDraftCenter(center);
-
-    // Show immediate feedback while reverse geocoding catches up.
-    setAddress(`${center.lat.toFixed(6)}, ${center.lon.toFixed(6)}`);
-    setAddressSuggestions([]);
-
-    try {
-      const resolvedAddress = await reverseGeocodeToAddress(center.lat, center.lon);
-
-      if (mapPickRequestRef.current !== requestId) {
-        return;
-      }
-
-      if (resolvedAddress) {
-        setAddress(resolvedAddress);
-        setAddressSuggestions([]);
-        setMapPickLoading(false);
-        return;
-      }
-
-      setLocationLookupError("Pin dropped. Reverse geocoding was unavailable, using coordinates.");
-      setMapPickLoading(false);
-    } catch {
-      if (mapPickRequestRef.current !== requestId) {
-        return;
-      }
-
-      setLocationLookupError("Pin dropped. Reverse geocoding failed, using coordinates.");
-      setMapPickLoading(false);
-    }
-  }
+  }, [location]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setShowAnalyzeErrorToast(false);
-    setRecommendation({ loading: false, result: null });
+    setLocationLookupError(null);
     setAnalysis({ loading: true, error: null, result: null });
 
     try {
@@ -387,13 +85,13 @@ export default function Home() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          address,
-          radiusKm,
+          address: location,
+          radiusKm: 3,
           businessPreset,
           weights: {
-            population: populationWeight,
-            competition: competitionWeight,
-            income: incomeWeight,
+            population: 50,
+            competition: 35,
+            income: 15,
           },
         }),
       });
@@ -403,471 +101,836 @@ export default function Home() {
       if (!response.ok || "error" in payload) {
         const message = "error" in payload ? payload.error : "Analysis failed.";
         setAnalysis({ loading: false, error: message, result: null });
-        setShowAnalyzeErrorToast(true);
         return;
       }
 
       setAnalysis({ loading: false, error: null, result: payload });
+      setAddressSuggestions([]);
+      setExpandedMetric(null);
     } catch {
       setAnalysis({
         loading: false,
         error: "Network error. Please try again.",
         result: null,
       });
-      setShowAnalyzeErrorToast(true);
     }
   }
 
-  async function getBrowserLocation(): Promise<{ lat: number; lon: number } | null> {
-    if (typeof window === "undefined" || !navigator.geolocation) {
-      return null;
+  function getScoreDisplay(score: number): { text: string; color: string } {
+    if (score >= 70) {
+      return { text: "Great opportunity", color: "#2f8552" };
     }
-
-    return new Promise((resolve) => {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          resolve({
-            lat: position.coords.latitude,
-            lon: position.coords.longitude,
-          });
-        },
-        () => resolve(null),
-        {
-          enableHighAccuracy: false,
-          timeout: 5000,
-          maximumAge: 600000,
-        },
-      );
-    });
+    if (score >= 50) {
+      return { text: "Decent opportunity", color: "#b08f2d" };
+    }
+    return { text: "Challenging market", color: "#b44532" };
   }
 
-  async function onRecommendStart() {
-    setShowAnalyzeErrorToast(false);
-    setRecommendation({ loading: true, result: null });
-    setAnalysis({ loading: true, error: null, result: null });
-
-    try {
-      const geo = await getBrowserLocation();
-
-      const response = await fetch("/api/recommend", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          radiusKm,
-          lat: geo?.lat,
-          lon: geo?.lon,
-          weights: {
-            population: populationWeight,
-            competition: competitionWeight,
-            income: incomeWeight,
-          },
-        }),
-      });
-
-      const payload = (await response.json()) as RecommendResponse | { error: string };
-
-      if (!response.ok || "error" in payload) {
-        const message = "error" in payload ? payload.error : "Recommendation failed.";
-        setRecommendation({ loading: false, result: null });
-        setAnalysis({ loading: false, error: message, result: null });
-        setShowAnalyzeErrorToast(true);
-        return;
-      }
-
-      setBusinessPreset(payload.selectedPreset);
-      setDraftCenter(payload.search.usedCoordinates);
-      setAddress(
-        payload.search.source === "geolocation"
-          ? `${payload.search.usedCoordinates.lat.toFixed(6)}, ${payload.search.usedCoordinates.lon.toFixed(6)}`
-          : payload.search.address,
-      );
-      setAddressSuggestions([]);
-      setRecommendation({ loading: false, result: payload });
-      setAnalysis({ loading: false, error: null, result: payload.analysis });
-    } catch {
-      setRecommendation({ loading: false, result: null });
-      setAnalysis({
-        loading: false,
-        error: "Network error while generating recommendations. Please try again.",
-        result: null,
-      });
-      setShowAnalyzeErrorToast(true);
-    }
-  }
+  const scoreInfo = analysis.result
+    ? getScoreDisplay(analysis.result.score.overall)
+    : null;
 
   return (
-    <div className="landkoala-shell landkoala-shell-focus">
-      <AppHeader panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((value) => !value)} />
+    <div className="landkoala-shell">
+      <AppHeader />
 
-      <main className="landkoala-stage" id="map-view">
-        {analysis.error && showAnalyzeErrorToast ? (
-          <div className="landkoala-toast landkoala-toast-error" role="alert" aria-live="assertive">
-            <span>{analysis.error}</span>
-            <button
-              type="button"
-              className="landkoala-toast-dismiss"
-              aria-label="Dismiss analysis error"
-              onClick={() => setShowAnalyzeErrorToast(false)}
-            >
-              Dismiss
-            </button>
+      <main className="landkoala-home-wrapper">
+        <section className="landkoala-hero">
+          <div className="landkoala-hero-content">
+            <h1>Find Your Next Location</h1>
+            <p>Want to build a specific business in a particular area? Let's see if it's a good fit.</p>
           </div>
+        </section>
+
+        {!analysis.result ? (
+          <section className="landkoala-form-section">
+            <form className="landkoala-home-form" onSubmit={onSubmit}>
+              <div className="landkoala-form-group">
+                <label htmlFor="business-type">What do you want to build?</label>
+                <select
+                  id="business-type"
+                  value={businessPreset}
+                  onChange={(event) =>
+                    setBusinessPreset(event.target.value as BusinessPreset)
+                  }
+                  required
+                >
+                  {presetOptions.map(([key, option]) => (
+                    <option key={key} value={key}>
+                      {option.label} - {option.description}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="landkoala-form-group">
+                <label htmlFor="location">Where do you want to build it?</label>
+                <div className="landkoala-location-input-wrapper">
+                  <input
+                    id="location"
+                    required
+                    value={location}
+                    onChange={(event) => setLocation(event.target.value)}
+                    placeholder="Enter a US city or address"
+                    list="landkoala-suggestions"
+                    autoComplete="off"
+                  />
+                  <datalist id="landkoala-suggestions">
+                    {addressSuggestions.map((suggestion) => (
+                      <option
+                        key={`${suggestion.lat}:${suggestion.lon}:${suggestion.label}`}
+                        value={suggestion.label}
+                      />
+                    ))}
+                  </datalist>
+                </div>
+                {locationLookupError && (
+                  <p className="landkoala-error-hint">{locationLookupError}</p>
+                )}
+              </div>
+
+              {analysis.error && (
+                <div className="landkoala-error-box">
+                  <p>{analysis.error}</p>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={analysis.loading}
+                className="landkoala-submit-button"
+              >
+                {analysis.loading ? "Analyzing..." : "Analyze Opportunity"}
+              </button>
+            </form>
+          </section>
         ) : null}
 
-        <ResultsMap
-          result={analysis.result}
-          selectedCenter={draftCenter}
-          onCenterPick={onMapCenterPick}
-        />
-
-        <aside className={`landkoala-actionbar ${panelOpen ? "is-open" : ""}`}>
-          <div className="landkoala-actionbar-head">
-            <div className="landkoala-actionbar-brand">
-              <p className="landkoala-kicker">LandKoala</p>
-              <p className="landkoala-actionbar-tagline">
-                Find underserved store locations in minutes
-              </p>
+        {analysis.result && (
+          <section className="landkoala-results-section">
+            <div className="landkoala-result-header">
+              <h2>Analysis Result</h2>
+              <button
+                type="button"
+                className="landkoala-back-button"
+                onClick={() => {
+                  setAnalysis({ loading: false, error: null, result: null });
+                  setExpandedMetric(null);
+                }}
+              >
+                Try Another Location
+              </button>
             </div>
-            <button type="button" onClick={() => setPanelOpen((value) => !value)}>
-              {panelOpen ? "Collapse" : "Expand"}
-            </button>
-          </div>
 
-          <div className="landkoala-actionbar-content">
-            {!showResultsView ? (
-              <>
-                <p className="landkoala-subtitle">
-                  Search a US address, choose a preset, then score a radius.
-                </p>
-
-                {analysis.error && analysisRecoveryHints.length > 0 ? (
-                  <div className="landkoala-warning-box" role="status" aria-live="polite">
-                    <strong>How to recover</strong>
-                    <ul>
-                      {analysisRecoveryHints.map((hint) => (
-                        <li key={hint}>{hint}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-
-                <button
-                  type="button"
-                  className="landkoala-secondary-button"
-                  onClick={onRecommendStart}
-                  disabled={analysis.loading || recommendation.loading}
+            <div
+              className="landkoala-score-display"
+              style={{ borderColor: scoreInfo?.color }}
+            >
+              <div className="landkoala-score-value">
+                <span className="score-number">{analysis.result.score.overall}/100</span>
+                <span
+                  className="score-label"
+                  style={{ color: scoreInfo?.color }}
                 >
-                  {recommendation.loading ? "Finding recommendation..." : "Recommend what to start for me"}
-                </button>
-
-                <p className="landkoala-hint">Auto-recommend checks all presets and picks the strongest fit.</p>
-
-                <form className="landkoala-form" onSubmit={onSubmit}>
-                  <label>
-                    Search address
-                    <div className="landkoala-address-row">
-                      <input
-                        required
-                        value={address}
-                        onChange={(event) => setAddress(event.target.value)}
-                        placeholder="Cambridge, MA"
-                        list="landkoala-address-suggestions"
-                      />
-                      <button
-                        type="button"
-                        className="landkoala-location-button"
-                        onClick={onUseMyLocation}
-                        disabled={locationLookupLoading}
-                      >
-                        {locationLookupLoading ? "Locating..." : "Use my location"}
-                      </button>
-                    </div>
-                    <datalist id="landkoala-address-suggestions">
-                      {addressSuggestions.map((suggestion) => (
-                        <option key={`${suggestion.lat}:${suggestion.lon}:${suggestion.label}`} value={suggestion.label} />
-                      ))}
-                    </datalist>
-                  </label>
-
-                  {mapPickLoading ? (
-                    <p className="landkoala-hint">Updating address from dropped pin...</p>
-                  ) : null}
-
-                  {locationLookupError ? (
-                    <p className="landkoala-inline-error">{locationLookupError}</p>
-                  ) : null}
-
-                  <div className="landkoala-inline-fields">
-                    <label>
-                      Radius (km)
-                      <input
-                        type="number"
-                        min={0.5}
-                        max={25}
-                        step={0.5}
-                        value={radiusKm}
-                        onChange={(event) => setRadiusKm(Number(event.target.value))}
-                      />
-                    </label>
-
-                    <label>
-                      Business type
-                      <select
-                        value={businessPreset}
-                        onChange={(event) =>
-                          setBusinessPreset(event.target.value as BusinessPreset)
-                        }
-                      >
-                        {presetOptions.map(([key, option]) => (
-                          <option key={key} value={key}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-
-                  <div className="landkoala-weight-grid">
-                    <label>
-                      Population weight
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={populationWeight}
-                        onChange={(event) => onWeightChange("population", Number(event.target.value))}
-                      />
-                    </label>
-                    <label>
-                      Competition weight
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={competitionWeight}
-                        onChange={(event) => onWeightChange("competition", Number(event.target.value))}
-                      />
-                    </label>
-                    <label>
-                      Income weight
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={incomeWeight}
-                        onChange={(event) => onWeightChange("income", Number(event.target.value))}
-                      />
-                    </label>
-                  </div>
-
-                  <button type="submit" disabled={analysis.loading}>
-                    {analysis.loading ? "Scoring area..." : "Analyze market"}
-                  </button>
-                </form>
-              </>
-            ) : (
-              <div className="landkoala-results-head">
-                <h1 className="landkoala-title">Analysis results</h1>
-                <button
-                  type="button"
-                  className="landkoala-nav-button"
-                  onClick={() => {
-                    setShowResultsView(false);
-                    setAnalysis((current) => ({ ...current, result: null, error: null }));
-                  }}
-                >
-                  Back to search
-                </button>
+                  {scoreInfo?.text}
+                </span>
               </div>
-            )}
-            <section id="insights" ref={insightsRef}>
-              {analysis.result ? (
-                <>
-                  {recommendation.result ? (
-                    <section className="landkoala-recommendation-card" aria-live="polite">
-                      <p className="landkoala-kicker">Auto recommendation</p>
-                      <h3>
-                        Start with {BUSINESS_PRESETS[recommendation.result.selectedPreset].label}
-                      </h3>
-                      <p>
-                        Based on {recommendation.result.search.source === "default"
-                          ? recommendation.result.search.address
-                          : recommendation.result.search.source === "geolocation"
-                            ? "your current location"
-                            : recommendation.result.search.address}
-                        {" "}
-                        within {recommendation.result.search.radiusKm} km.
+            </div>
+
+            <div className="landkoala-metrics-grid">
+              <button
+                type="button"
+                className="metric-card metric-card-button"
+                onClick={() =>
+                  setExpandedMetric(expandedMetric === "population" ? null : "population")
+                }
+              >
+                <p className="metric-label">Population</p>
+                <p className="metric-value">
+                  {analysis.result.demographics.population?.toLocaleString() ?? "N/A"}
+                </p>
+                <span className="metric-expand-icon">
+                  {expandedMetric === "population" ? "−" : "+"}
+                </span>
+                {expandedMetric === "population" && (
+                  <div className="metric-explanation">
+                    <p>
+                      The number of people living within the {analysis.result.competition.count > 0 ? "3 km radius" : "search area"} of this location. Higher population generally indicates stronger demand for services and retail.
+                    </p>
+                    <p className="metric-context">
+                      <strong>For this location:</strong> With {analysis.result.demographics.population?.toLocaleString()} people nearby, you have a{" "}
+                      {analysis.result.demographics.population && analysis.result.demographics.population > 15000
+                        ? "strong customer base"
+                        : analysis.result.demographics.population && analysis.result.demographics.population > 5000
+                          ? "moderate customer base"
+                          : "limited customer base"}
+                      .
+                    </p>
+                  </div>
+                )}
+              </button>
+
+              <button
+                type="button"
+                className="metric-card metric-card-button"
+                onClick={() =>
+                  setExpandedMetric(expandedMetric === "income" ? null : "income")
+                }
+              >
+                <p className="metric-label">Median Income</p>
+                <p className="metric-value">
+                  {analysis.result.demographics.medianIncome
+                    ? `$${analysis.result.demographics.medianIncome.toLocaleString()}`
+                    : "N/A"}
+                </p>
+                <span className="metric-expand-icon">
+                  {expandedMetric === "income" ? "−" : "+"}
+                </span>
+                {expandedMetric === "income" && (
+                  <div className="metric-explanation">
+                    <p>
+                      The typical household income in this area. Income levels influence purchasing power and the types of products/services that will be successful.
+                    </p>
+                    <p className="metric-context">
+                      <strong>For this location:</strong> An income of{" "}
+                      {analysis.result.demographics.medianIncome
+                        ? `$${analysis.result.demographics.medianIncome.toLocaleString()}`
+                        : "unknown"}{" "}
+                      suggests a{" "}
+                      {analysis.result.demographics.medianIncome && analysis.result.demographics.medianIncome > 100000
+                        ? "affluent market with higher spending power"
+                        : analysis.result.demographics.medianIncome && analysis.result.demographics.medianIncome > 60000
+                          ? "middle-to-upper income market"
+                          : "price-sensitive market"}{" "}
+                      for your business.
+                    </p>
+                  </div>
+                )}
+              </button>
+
+              <button
+                type="button"
+                className="metric-card metric-card-button"
+                onClick={() =>
+                  setExpandedMetric(expandedMetric === "competitors" ? null : "competitors")
+                }
+              >
+                <p className="metric-label">Competitors</p>
+                <p className="metric-value">{analysis.result.competition.count}</p>
+                <span className="metric-expand-icon">
+                  {expandedMetric === "competitors" ? "−" : "+"}
+                </span>
+                {expandedMetric === "competitors" && (
+                  <div className="metric-explanation">
+                    <p>
+                      The number of established competitors offering similar services within the search radius. More competitors indicate a validated market, but also more competition.
+                    </p>
+                    <p className="metric-context">
+                      <strong>For this location:</strong> With {analysis.result.competition.count} competitors,{" "}
+                      {analysis.result.competition.count === 0
+                        ? "you have a unique market opportunity with no direct competition"
+                        : analysis.result.competition.count < 5
+                          ? "you're entering a relatively uncrowded market"
+                          : analysis.result.competition.count < 20
+                            ? "the market is moderately competitive"
+                            : "the market is well-served with established players"}{" "}
+                      in this area.
+                    </p>
+                  </div>
+                )}
+              </button>
+
+              <button
+                type="button"
+                className="metric-card metric-card-button"
+                onClick={() =>
+                  setExpandedMetric(expandedMetric === "nearest" ? null : "nearest")
+                }
+              >
+                <p className="metric-label">Nearest Competitor</p>
+                <p className="metric-value">
+                  {analysis.result.competition.nearestKm
+                    ? `${analysis.result.competition.nearestKm.toFixed(2)} km`
+                    : "N/A"}
+                </p>
+                <span className="metric-expand-icon">
+                  {expandedMetric === "nearest" ? "−" : "+"}
+                </span>
+                {expandedMetric === "nearest" && (
+                  <div className="metric-explanation">
+                    <p>
+                      Distance to the closest competitor. Closer competitors typically mean higher saturation but also market validation. Farther away can indicate underserved areas or lower demand.
+                    </p>
+                    <p className="metric-context">
+                      <strong>For this location:</strong> The nearest competitor is{" "}
+                      {analysis.result.competition.nearestKm
+                        ? analysis.result.competition.nearestKm < 0.5
+                          ? "extremely close (very saturated area)"
+                          : analysis.result.competition.nearestKm < 2
+                            ? "nearby (moderate saturation)"
+                            : "at a reasonable distance (less saturated)"
+                        : "nonexistent (unique opportunity)"}{" "}
+                      ,{" "}
+                      {analysis.result.competition.nearestKm && analysis.result.competition.nearestKm < 1
+                        ? "suggesting you may want to differentiate or look elsewhere"
+                        : "which could be favorable depending on your positioning"}
+                      .
+                    </p>
+                  </div>
+                )}
+              </button>
+            </div>
+
+            <div className="landkoala-recommendation">
+              <h3>Key Insights</h3>
+              <ul className="insight-list">
+                {analysis.result.score.overall >= 70 && (
+                  <li className="insight-item insight-item-positive">
+                    <span className="insight-icon">✓</span>
+                    <div className="insight-content">
+                      <p className="insight-title">Strong Market Indicators</p>
+                      <p className="insight-detail">
+                        This location shows strong potential with good population density and reasonable competition levels. The market fundamentals support a new business entry.
                       </p>
-
-                      <ul className="landkoala-recommendation-list">
-                        {recommendation.result.recommendations.map((item) => (
-                          <li key={item.preset}>
-                            <span>
-                              {item.label}
-                              {item.preset === recommendation.result?.selectedPreset ? " (recommended)" : ""}
-                            </span>
-                            <strong>{item.score.toFixed(1)}</strong>
-                          </li>
-                        ))}
-                      </ul>
-                    </section>
-                  ) : null}
-
-                  <div
-                    className="landkoala-score-card"
-                    style={{ background: getScoreCardGradient(analysis.result.score.overall) }}
-                  >
-                    <div className="landkoala-score-head">
-                      <p>Overall suitability</p>
-                      <button
-                        type="button"
-                        className="landkoala-score-info-button"
-                        aria-label="How the overall suitability score is calculated"
-                        aria-expanded={scoreInfoOpen}
-                        aria-controls="landkoala-score-explainer"
-                        onClick={() => setScoreInfoOpen((value) => !value)}
-                      >
-                        i
-                      </button>
                     </div>
-                    <strong>{analysis.result.score.overall}/100</strong>
-                    {scoreInfoOpen ? (
-                      <div
-                        id="landkoala-score-explainer"
-                        className="landkoala-score-explainer"
-                        role="status"
-                      >
-                        <p>
-                          The score is a weighted blend of three normalized components, then
-                          scaled to 100.
-                        </p>
-                        <p>
-                          Formula: overall = population x {analysis.result.score.weights.population.toFixed(2)} +
-                          competition x {analysis.result.score.weights.competition.toFixed(2)} + income x {" "}
-                          {analysis.result.score.weights.income.toFixed(2)}.
-                        </p>
-                        <ul>
-                          <li>Population = nearby population divided by 12,000.</li>
-                          <li>Competition = 1 - (competitor density / 5 competitors per km^2).</li>
-                          <li>Income = median household income divided by 100,000.</li>
-                        </ul>
-                        <p>
-                          Current components: population {analysis.result.score.components.population}, competition{" "}
-                          {analysis.result.score.components.competition}, income {analysis.result.score.components.income}.
+                  </li>
+                )}
+                {analysis.result.score.overall >= 50 &&
+                  analysis.result.score.overall < 70 && (
+                    <li className="insight-item insight-item-moderate">
+                      <span className="insight-icon">→</span>
+                      <div className="insight-content">
+                        <p className="insight-title">Moderate Opportunity</p>
+                        <p className="insight-detail">
+                          This area has decent fundamentals, but you may want to analyze nearby areas for potentially better fit. Look for locations with either lower competition or higher population density.
                         </p>
                       </div>
-                    ) : null}
-                  </div>
+                    </li>
+                  )}
+                {analysis.result.score.overall < 50 && (
+                  <li className="insight-item insight-item-caution">
+                    <span className="insight-icon">!</span>
+                    <div className="insight-content">
+                      <p className="insight-title">Challenging Market</p>
+                      <p className="insight-detail">
+                        Market indicators suggest this may be a challenging location—either high competition or low demand signals. Consider exploring other areas before committing.
+                      </p>
+                    </div>
+                  </li>
+                )}
+                {analysis.result.competition.count === 0 && (
+                  <li className="insight-item insight-item-positive">
+                    <span className="insight-icon">★</span>
+                    <div className="insight-content">
+                      <p className="insight-title">Unique Opportunity</p>
+                      <p className="insight-detail">
+                        No direct competitors detected in the area. This could indicate a gap in the market—validate demand before moving forward.
+                      </p>
+                    </div>
+                  </li>
+                )}
+                {analysis.result.demographics.medianIncome &&
+                  analysis.result.demographics.medianIncome > 75000 && (
+                    <li className="insight-item insight-item-positive">
+                      <span className="insight-icon">💰</span>
+                      <div className="insight-content">
+                        <p className="insight-title">High-Income Area</p>
+                        <p className="insight-detail">
+                          This area has above-average household income, indicating strong purchasing power. Premium positioning and higher-margin products/services may perform well.
+                        </p>
+                      </div>
+                    </li>
+                  )}
+              </ul>
+            </div>
 
-                  <div className="landkoala-metrics">
-                    <article>
-                      <p>Population</p>
-                      <strong>{analysis.result.score.components.population}</strong>
-                    </article>
-                    <article>
-                      <p>Competition</p>
-                      <strong>{analysis.result.score.components.competition}</strong>
-                    </article>
-                    <article>
-                      <p>Income</p>
-                      <strong>{analysis.result.score.components.income}</strong>
-                    </article>
-                  </div>
+            <div className="landkoala-action-links">
+              <a
+                href={`/map?location=${encodeURIComponent(location)}&business=${businessPreset}`}
+                className="landkoala-link-button"
+              >
+                Explore on Map
+              </a>
+            </div>
+          </section>
+        )}
 
-                  <div className="landkoala-data-grid">
-                    <p>
-                      <span>Population:</span>
-                      <strong>{analysis.result.demographics.population ?? "N/A"}</strong>
-                    </p>
-                    <p>
-                      <span>Median income:</span>
-                      <strong>
-                        {analysis.result.demographics.medianIncome
-                          ? `$${analysis.result.demographics.medianIncome.toLocaleString()}`
-                          : "N/A"}
-                      </strong>
-                    </p>
-                    <p>
-                      <span>Competitors:</span>
-                      <strong>{analysis.result.competition.count}</strong>
-                    </p>
-                    <p>
-                      <span>Nearest:</span>
-                      <strong>
-                        {analysis.result.competition.nearestKm
-                          ? `${analysis.result.competition.nearestKm.toFixed(2)} km`
-                          : "N/A"}
-                      </strong>
-                    </p>
-                  </div>
-
-                  <h3 className="landkoala-section-subtitle">Closest competitors</h3>
-
-                  {selectedCompetitor ? (
-                    <article className="landkoala-competitor-detail">
-                      <h4>{selectedCompetitor.name ?? "Unnamed place"}</h4>
-                      <p>
-                        <span>Distance:</span>
-                        <strong>{selectedCompetitor.distanceKm.toFixed(2)} km</strong>
-                      </p>
-                      <p>
-                        <span>Category:</span>
-                        <strong>{formatCategory(selectedCompetitor.metadata.category)}</strong>
-                      </p>
-                      <p>
-                        <span>Brand:</span>
-                        <strong>{selectedCompetitor.metadata.brand ?? "N/A"}</strong>
-                      </p>
-                      <p>
-                        <span>Operator:</span>
-                        <strong>{selectedCompetitor.metadata.operator ?? "N/A"}</strong>
-                      </p>
-                      <p>
-                        <span>Address:</span>
-                        <strong>{selectedCompetitor.metadata.address ?? "N/A"}</strong>
-                      </p>
-                      <p>
-                        <span>Phone:</span>
-                        <strong>{selectedCompetitor.metadata.phone ?? "N/A"}</strong>
-                      </p>
-                      <p>
-                        <span>Website:</span>
-                        <strong>{selectedCompetitor.metadata.website ?? "N/A"}</strong>
-                      </p>
-                      <p>
-                        <span>Hours:</span>
-                        <strong>{selectedCompetitor.metadata.openingHours ?? "N/A"}</strong>
-                      </p>
-                    </article>
-                  ) : null}
-
-                  <ul className="landkoala-competitor-list">
-                    {analysis.result.competition.sample.map((competitor) => (
-                      <li key={getCompetitorKey(competitor)}>
-                        <button
-                          type="button"
-                          className={`landkoala-competitor-item ${
-                            selectedCompetitorKey === getCompetitorKey(competitor)
-                              ? "is-active"
-                              : ""
-                          }`}
-                          onClick={() => setSelectedCompetitorKey(getCompetitorKey(competitor))}
-                        >
-                          <span>{competitor.name ?? "Unnamed place"}</span>
-                          <strong>{competitor.distanceKm.toFixed(2)} km</strong>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              ) : null}
-            </section>
-
+        <footer className="landkoala-footer">
+          <div className="footer-content">
+            <p className="footer-message">Did LandKoala give you some insight you didn't have before?</p>
+            <CoffeeButton amount={5} size="medium" />
           </div>
-        </aside>
+        </footer>
       </main>
+
+      <style jsx>{`
+        .landkoala-home-wrapper {
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 2rem;
+        }
+
+        .landkoala-hero {
+          text-align: center;
+          margin-bottom: 4rem;
+        }
+
+        .landkoala-hero h1 {
+          font-size: 2.5rem;
+          margin-bottom: 1rem;
+          color: #2d3436;
+        }
+
+        .landkoala-hero p {
+          font-size: 1.1rem;
+          color: #636e72;
+          max-width: 600px;
+          margin: 0 auto;
+        }
+
+        .landkoala-form-section {
+          max-width: 500px;
+          margin: 0 auto;
+          margin-bottom: 4rem;
+        }
+
+        .landkoala-home-form {
+          background: white;
+          padding: 2rem;
+          border-radius: 8px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .landkoala-form-group {
+          margin-bottom: 1.5rem;
+        }
+
+        .landkoala-form-group label {
+          display: block;
+          margin-bottom: 0.5rem;
+          font-weight: 500;
+          color: #2d3436;
+        }
+
+        .landkoala-form-group input,
+        .landkoala-form-group select {
+          width: 100%;
+          padding: 0.75rem;
+          border: 1px solid #dfe6e9;
+          border-radius: 4px;
+          font-size: 1rem;
+          font-family: inherit;
+        }
+
+        .landkoala-form-group input:focus,
+        .landkoala-form-group select:focus {
+          outline: none;
+          border-color: #2f8552;
+          box-shadow: 0 0 0 3px rgba(47, 133, 82, 0.1);
+        }
+
+        .landkoala-error-hint {
+          color: #d63031;
+          font-size: 0.875rem;
+          margin-top: 0.5rem;
+        }
+
+        .landkoala-error-box {
+          background: #ffebee;
+          border-left: 4px solid #d63031;
+          padding: 1rem;
+          border-radius: 4px;
+          margin-bottom: 1rem;
+          color: #c92a2a;
+        }
+
+        .landkoala-submit-button {
+          width: 100%;
+          padding: 0.875rem;
+          background: #2f8552;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          font-size: 1rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+
+        .landkoala-submit-button:hover:not(:disabled) {
+          background: #245f3b;
+        }
+
+        .landkoala-submit-button:disabled {
+          background: #b2bec3;
+          cursor: not-allowed;
+        }
+
+        .landkoala-results-section {
+          max-width: 600px;
+          margin: 0 auto;
+        }
+
+        .landkoala-result-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 2rem;
+        }
+
+        .landkoala-result-header h2 {
+          margin: 0;
+          color: #2d3436;
+        }
+
+        .landkoala-back-button {
+          padding: 0.5rem 1rem;
+          background: #f0f0f0;
+          border: 1px solid #dfe6e9;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+
+        .landkoala-back-button:hover {
+          background: #e9e9e9;
+        }
+
+        .landkoala-score-display {
+          background: white;
+          border-left: 4px solid #2f8552;
+          padding: 2rem;
+          border-radius: 8px;
+          margin-bottom: 2rem;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .landkoala-score-value {
+          display: flex;
+          align-items: baseline;
+          gap: 1rem;
+        }
+
+        .score-number {
+          font-size: 3rem;
+          font-weight: bold;
+          color: #2d3436;
+        }
+
+        .score-label {
+          font-size: 1.25rem;
+          font-weight: 500;
+        }
+
+        .landkoala-metrics-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 1rem;
+          margin-bottom: 2rem;
+        }
+
+        @media (max-width: 600px) {
+          .landkoala-metrics-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        .metric-card {
+          background: white;
+          padding: 1.5rem;
+          border-radius: 8px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .metric-card-button {
+          background: white;
+          padding: 1.5rem;
+          border-radius: 8px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+          border: 2px solid transparent;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          text-align: left;
+          position: relative;
+        }
+
+        .metric-card-button:hover {
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+          border-color: #2f8552;
+        }
+
+        .metric-card-button:active {
+          transform: translateY(1px);
+        }
+
+        .metric-expand-icon {
+          position: absolute;
+          top: 1.5rem;
+          right: 1.5rem;
+          font-weight: bold;
+          color: #2f8552;
+          font-size: 1.5rem;
+        }
+
+        .metric-explanation {
+          margin-top: 1rem;
+          padding-top: 1rem;
+          border-top: 1px solid #e0e0e0;
+          animation: slideDown 0.2s ease-out;
+        }
+
+        @keyframes slideDown {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .metric-explanation p {
+          font-size: 0.9rem;
+          color: #555;
+          line-height: 1.5;
+          margin: 0.75rem 0;
+        }
+
+        .metric-context {
+          background: #f0f6f3;
+          padding: 0.75rem;
+          border-left: 3px solid #2f8552;
+          border-radius: 4px;
+          font-size: 0.85rem;
+        }
+
+        .metric-label {
+          font-size: 0.875rem;
+          color: #636e72;
+          margin: 0 0 0.5rem 0;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .metric-value {
+          font-size: 1.5rem;
+          font-weight: 600;
+          color: #2d3436;
+          margin: 0;
+        }
+
+        .landkoala-recommendation {
+          background: #f8f9fa;
+          padding: 1.5rem;
+          border-radius: 8px;
+          margin-bottom: 2rem;
+        }
+
+        .landkoala-recommendation h3 {
+          margin: 0 0 1rem 0;
+          color: #2d3436;
+        }
+
+        .insight-list {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+        }
+
+        .insight-item {
+          display: flex;
+          gap: 1rem;
+          padding: 1rem;
+          margin-bottom: 0.75rem;
+          background: white;
+          border-radius: 6px;
+          border-left: 4px solid #b2bec3;
+          transition: all 0.2s ease;
+        }
+
+        .insight-item:hover {
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+          transform: translateX(2px);
+        }
+
+        .insight-item-positive {
+          border-left-color: #2f8552;
+          background: #f0f9f6;
+        }
+
+        .insight-item-moderate {
+          border-left-color: #b08f2d;
+          background: #faf7f0;
+        }
+
+        .insight-item-caution {
+          border-left-color: #b44532;
+          background: #faf5f4;
+        }
+
+        .insight-icon {
+          font-size: 1.25rem;
+          min-width: 1.5rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+
+        .insight-item-positive .insight-icon {
+          color: #2f8552;
+        }
+
+        .insight-item-moderate .insight-icon {
+          color: #b08f2d;
+        }
+
+        .insight-item-caution .insight-icon {
+          color: #b44532;
+        }
+
+        .insight-content {
+          flex: 1;
+        }
+
+        .insight-title {
+          font-weight: 600;
+          color: #2d3436;
+          margin: 0 0 0.5rem 0;
+          font-size: 0.95rem;
+        }
+
+        .insight-detail {
+          margin: 0;
+          color: #555;
+          font-size: 0.85rem;
+          line-height: 1.5;
+        }
+
+        .landkoala-action-links {
+          display: flex;
+          gap: 1rem;
+          justify-content: center;
+        }
+
+        .landkoala-link-button {
+          padding: 0.875rem 2rem;
+          background: #2f8552;
+          color: white;
+          text-decoration: none;
+          border-radius: 4px;
+          font-weight: 500;
+          transition: background 0.2s;
+          display: inline-block;
+        }
+
+        .landkoala-link-button:hover {
+          background: #245f3b;
+        }
+
+        .landkoala-footer {
+          margin-top: 4rem;
+          padding-top: 2rem;
+          border-top: 1px solid #e0e0e0;
+        }
+
+        .footer-content {
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 0 2rem 2rem;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0.75rem;
+        }
+
+        .footer-message {
+          margin: 0;
+          color: #636e72;
+          font-size: 0.9rem;
+        }
+
+        .coffee-button {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.75rem 1.5rem;
+          background: linear-gradient(135deg, #f4a460 0%, #e6935b 100%);
+          color: white;
+          text-decoration: none;
+          border-radius: 25px;
+          font-weight: 500;
+          transition: all 0.3s ease;
+          box-shadow: 0 4px 12px rgba(244, 164, 96, 0.3);
+          border: none;
+          cursor: pointer;
+          font-family: inherit;
+        }
+
+        .coffee-button:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 18px rgba(244, 164, 96, 0.4);
+        }
+
+        .coffee-button:active {
+          transform: translateY(0);
+        }
+
+        .coffee-emoji {
+          font-size: 1.2rem;
+          animation: wiggle 0.5s ease-in-out infinite;
+        }
+
+        @keyframes wiggle {
+          0%, 100% {
+            transform: rotate(0deg);
+          }
+          25% {
+            transform: rotate(-5deg);
+          }
+          75% {
+            transform: rotate(5deg);
+          }
+        }
+
+        .coffee-button:hover .coffee-emoji {
+          animation: wiggle 0.3s ease-in-out infinite;
+        }
+
+        .coffee-text {
+          font-size: 0.95rem;
+        }
+
+        .coffee-amount {
+          font-weight: 700;
+          font-size: 1rem;
+          margin-left: 0.25rem;
+        }
+
+        .coffee-button-small {
+          padding: 0.5rem 1rem;
+          font-size: 0.85rem;
+        }
+
+        .coffee-button-small .coffee-emoji {
+          font-size: 1rem;
+        }
+
+        .coffee-button-medium {
+          padding: 0.75rem 1.5rem;
+          font-size: 0.95rem;
+        }
+
+        .coffee-button-large {
+          padding: 1rem 2rem;
+          font-size: 1.1rem;
+        }
+
+        .coffee-button-large .coffee-emoji {
+          font-size: 1.4rem;
+        }
+      `}</style>
     </div>
   );
 }

@@ -10,7 +10,7 @@ export function AppLogo({ compact = false }: AppLogoProps) {
       </span>
       <div className="landkoala-logo-copy">
         <strong>LandKoala</strong>
-        {!compact ? <small>Site selection intelligence</small> : null}
+        {!compact ? <small>Free site selection intelligence</small> : null}
       </div>
     </div>
   );
