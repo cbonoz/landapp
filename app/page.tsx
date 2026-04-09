@@ -112,7 +112,7 @@ export default function Home() {
     const messageIntervalId = window.setInterval(() => {
       setLoadingMessage((prev) => {
         if (prev === "Analyzing...") return "Still working on it...";
-        if (prev === "Still working on it...") return "Almost there, one moment...";
+        if (prev === "Still working on it...") return "This is taking longer than usual—there may be a connection issue.";
         return prev;
       });
     }, 10000);
