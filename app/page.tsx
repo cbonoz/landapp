@@ -112,7 +112,7 @@ export default function Home() {
     const messageIntervalId = window.setInterval(() => {
       setLoadingMessage((prev) => {
         if (prev === "Analyzing...") return "Still working on it...";
-        if (prev === "Still working on it...") return "This is taking longer than usual—there may be a connection issue.";
+        if (prev === "Still working on it...") return "Waiting a few more moments...";
         return prev;
       });
     }, 10000);
@@ -120,7 +120,7 @@ export default function Home() {
     try {
       // Determine radius: start at 2km, go down to 1km on retry
       const baseRadius = smallerRadius ? 1 : 2;
-      
+
       const response = await fetch("/api/analyze", {
         method: "POST",
         headers: {
@@ -146,7 +146,7 @@ export default function Home() {
       if (!response.ok || "error" in payload) {
         const message = "error" in payload ? payload.error : "Analysis failed.";
         const parsed = parseAnalysisError(message);
-        
+
         // Auto-retry with smaller radius on timeout (only once)
         if (parsed.canAutoRetry && !smallerRadius && retryCountRef < 1) {
           setRetryCountRef((c) => c + 1);
@@ -156,7 +156,7 @@ export default function Home() {
           }, 800);
           return;
         }
-        
+
         setAnalysis({ loading: false, error: message, result: null });
         return;
       }
